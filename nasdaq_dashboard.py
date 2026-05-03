@@ -122,6 +122,31 @@ def add_indicators(df):
     df["MACD_hist"]   = df["MACD"] - df["MACD_signal"]
     return df
 
+def compute_rs_score(stock_df, bench_df):
+    """
+    Composite RS Score vs QQQ benchmark.
+    rs_63  = stock 63-day return / QQQ 63-day return
+    rs_126 = stock 126-day return / QQQ 126-day return
+    RS Score = (rs_63 + rs_126) / 2
+    Higher = stronger stock relative to Nasdaq 100.
+    """
+    try:
+        common = stock_df.index.intersection(bench_df.index)
+        if len(common) < 126:
+            return None
+        s = stock_df["Close"].reindex(common)
+        b = bench_df["Close"].reindex(common)
+        s_now = float(s.iloc[-1]); b_now = float(b.iloc[-1])
+        s63  = (s_now / float(s.iloc[-63])  - 1)
+        b63  = (b_now / float(b.iloc[-63])  - 1)
+        rs63 = s63 / abs(b63) if b63 != 0 else 0
+        s126  = (s_now / float(s.iloc[-126]) - 1)
+        b126  = (b_now / float(b.iloc[-126]) - 1)
+        rs126 = s126 / abs(b126) if b126 != 0 else 0
+        return round((rs63 + rs126) / 2, 2)
+    except:
+        return None
+
 def get_signal_state(df):
     """
     Exact same 4-step state machine as NSE dashboard.
@@ -415,6 +440,9 @@ elif page == "🔍 Signal Scanner":
     if scan_locked: scan_label = "🔒 Re-scan (today's results already locked)"
 
     if st.button(scan_label, type="primary", use_container_width=True):
+        # Load QQQ benchmark for RS calculation
+        bench_df_raw = fetch_data("QQQ", "2y")
+
         results = []
         pb    = st.progress(0, text="Scanning Nasdaq 100...")
         total = len(NASDAQ100)
@@ -426,7 +454,15 @@ elif page == "🔍 Signal Scanner":
             state, info = get_signal_state(df)
             if state == "none" or info.get("vol20",0) < 500000 or info.get("close",0) < 5:
                 continue
-            results.append({"Symbol": ticker, "Signal": state, **info})
+            # Calculate RS score vs QQQ
+            rs = compute_rs_score(df_raw, bench_df_raw) if bench_df_raw is not None else None
+            results.append({"Symbol": ticker, "Signal": state, "RS Score": rs, **info})
+
+        # Sort by signal priority then RS score descending
+        results.sort(key=lambda x: (
+            {"confirmed":0,"breakout":1,"near_52w":2,"ema_cross":3,"watching":4}.get(x["Signal"],5),
+            -(x["RS Score"] or 0)
+        ))
         pb.empty()
         st.session_state["nasdaq_scan_results"] = results
         st.session_state["nasdaq_scan_time"]    = now_et.strftime("%d %b %Y %H:%M ET")
@@ -462,11 +498,12 @@ elif page == "🔍 Signal Scanner":
             label_map = {"confirmed":"✅ Confirmed","breakout":"🔥 Breakout",
                          "near_52w":"⚡ Near 52W","ema_cross":"📡 EMA Cross","watching":"👁 Watching"}
             rows = []
-            for r in sorted(filtered, key=lambda x:
-                    {"confirmed":0,"breakout":1,"near_52w":2,"ema_cross":3,"watching":4}.get(x["Signal"],5)):
+            for r in filtered:
+                rs = r.get("RS Score")
                 rows.append({
                     "Symbol"           : r["Symbol"],
                     "Signal"           : label_map.get(r["Signal"],r["Signal"]),
+                    "RS Score"         : f"{rs:+.2f}" if rs is not None else "—",
                     "Price $"          : r["close"],
                     "EMA 220 $"        : r["ema220"],
                     "% above EMA"      : f"{r['pct_above_ema']:+.2f}%",
