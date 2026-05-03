@@ -88,20 +88,59 @@ NIFTY500 = list(dict.fromkeys(NIFTY500))
 
 # ── Data functions ────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=900)  # cache 15 minutes
+@st.cache_data(ttl=86400)  # cache 24 hours — one download per day max
 def fetch_data(symbol_ns, period="2y"):
+    """
+    Downloads data with strict daily caching.
+    - If cache exists and was written TODAY after 3:30 PM IST → use cache (final closing prices)
+    - If cache exists but stale → re-download
+    - Always falls back to cache if download fails
+    This ensures the same data is used throughout a session and signals don't flip.
+    """
     cache = f"data_cache/{symbol_ns.replace('.','_').replace('^','_').replace('&','_')}.csv"
+
+    # Check if we have a fresh post-market cache for today
+    now_ist = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+    today   = now_ist.date()
+    market_close_today = datetime.datetime.combine(today,
+                         datetime.time(15, 30)) - datetime.timedelta(hours=5, minutes=30)
+
+    if os.path.exists(cache):
+        mtime     = datetime.datetime.utcfromtimestamp(os.path.getmtime(cache))
+        cache_age = (datetime.datetime.utcnow() - mtime).total_seconds()
+        # Use cache if: written today after market close (final data), OR written within last 24h on weekend
+        is_weekend = now_ist.weekday() >= 5
+        cache_is_today = mtime.date() == today
+        cache_post_close = mtime > market_close_today
+
+        if (cache_is_today and cache_post_close) or (is_weekend and cache_age < 172800):
+            try:
+                df = pd.read_csv(cache, index_col=0, parse_dates=True)
+                if len(df) > 10:
+                    return df
+            except:
+                pass
+
+    # Download fresh data
     try:
         df = yf.download(symbol_ns, period=period, auto_adjust=True, progress=False)
-        if df is None or df.empty: return None
+        if df is None or df.empty:
+            # Fall back to any existing cache
+            if os.path.exists(cache):
+                return pd.read_csv(cache, index_col=0, parse_dates=True)
+            return None
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         df = df[["Open","High","Low","Close","Volume"]].dropna()
-        if not df.empty: df.to_csv(cache)
-        return df
+        if not df.empty:
+            df.to_csv(cache)
+        return df if not df.empty else None
     except:
         if os.path.exists(cache):
-            return pd.read_csv(cache, index_col=0, parse_dates=True)
+            try:
+                return pd.read_csv(cache, index_col=0, parse_dates=True)
+            except:
+                pass
         return None
 
 def add_indicators(df):
@@ -122,6 +161,39 @@ def add_indicators(df):
     df["MACD_signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
     df["MACD_hist"]   = df["MACD"] - df["MACD_signal"]
     return df
+
+def compute_rs_score(stock_df, bench_df):
+    """
+    Composite RS Score vs Nifty 500 benchmark.
+    rs_63  = stock 63-day return / nifty500 63-day return
+    rs_126 = stock 126-day return / nifty500 126-day return
+    RS Score = (rs_63 + rs_126) / 2
+    Higher = stronger stock relative to market.
+    """
+    try:
+        # Align both dataframes on common dates
+        common = stock_df.index.intersection(bench_df.index)
+        if len(common) < 126:
+            return None
+        s = stock_df["Close"].reindex(common)
+        b = bench_df["Close"].reindex(common)
+
+        s_now = float(s.iloc[-1])
+        b_now = float(b.iloc[-1])
+
+        # 63-day (3 month) relative return
+        s63 = (s_now / float(s.iloc[-63]) - 1)
+        b63 = (b_now / float(b.iloc[-63]) - 1)
+        rs63 = s63 / abs(b63) if b63 != 0 else 0
+
+        # 126-day (6 month) relative return
+        s126 = (s_now / float(s.iloc[-126]) - 1)
+        b126 = (b_now / float(b.iloc[-126]) - 1)
+        rs126 = s126 / abs(b126) if b126 != 0 else 0
+
+        return round((rs63 + rs126) / 2, 2)
+    except:
+        return None
 
 def get_signal_state(df):
     """
@@ -469,11 +541,37 @@ elif page == "🔍 Signal Scanner":
                     ["All","✅ Confirmed","🔥 Breakout","⚡ Near 52W High","📡 EMA Cross","👁 Watching"],
                     default="All")
 
+    # Check if we already have a post-close scan for today
+    last_scan_time = st.session_state.get("scan_time","")
+    scan_locked    = False
+    if last_scan_time and not is_weekend and is_post_close:
+        try:
+            scan_dt = datetime.datetime.strptime(last_scan_time, "%d %b %Y %H:%M IST")
+            if scan_dt.date() == now_ist.date() and scan_dt.time() > market_close.replace():
+                scan_locked = True
+        except: pass
+
+    if scan_locked:
+        st.info(
+            f"🔒 **Scan results are locked for today ({now_ist.strftime('%d %b %Y')}).**\n\n"
+            "You already ran a post-market scan today. Results are frozen to prevent signal flipping. "
+            "They will unlock tomorrow after market close."
+        )
+
     # Disable scan button on weekends with a clear message
-    scan_label   = "🔍 Run Full Scan" if not is_weekend else "🔍 Run Full Scan (weekend — results may be unreliable)"
+    scan_label = "🔍 Run Full Scan" if not is_weekend else "🔍 Run Full Scan (weekend — results may be unreliable)"
+    if scan_locked:
+        scan_label = "🔒 Re-scan (today's results already locked — not recommended)"
+
     if st.button(scan_label, type="primary", use_container_width=True):
         if is_weekend:
             st.warning("Running scan on weekend — treat results with caution. Best to re-run on Monday after market close.")
+        if scan_locked:
+            st.warning("⚠️ Re-scanning will overwrite today's locked results. Use only if you suspect a data error.")
+
+        # Load benchmark for RS calculation
+        bench_df_raw = fetch_data("^CRSLDX", "2y") or fetch_data("^NSEI", "2y")
+
         results = []
         pb = st.progress(0, text="Scanning stocks...")
         total = len(NIFTY500)
@@ -485,7 +583,15 @@ elif page == "🔍 Signal Scanner":
             state, info = get_signal_state(df)
             if state == "none" or info.get("vol20",0) < 100000 or info.get("close",0) < 50:
                 continue
-            results.append({"Symbol": ticker, "Signal": state, **info})
+            # Calculate RS score vs Nifty 500
+            rs = compute_rs_score(df_raw, bench_df_raw) if bench_df_raw is not None else None
+            results.append({"Symbol": ticker, "Signal": state, "RS Score": rs, **info})
+
+        # Sort confirmed stocks by RS score (highest first)
+        results.sort(key=lambda x: (
+            {"confirmed":0,"breakout":1,"near_52w":2,"ema_cross":3,"watching":4}.get(x["Signal"],5),
+            -(x["RS Score"] or 0)
+        ))
         pb.empty()
         # Tag results with whether market was open/closed/weekend
         market_status = "weekend" if is_weekend else "market_hours" if is_market_hours else "post_close"
@@ -534,12 +640,13 @@ elif page == "🔍 Signal Scanner":
                 "watching"  :"👁 Watching",
             }
             rows = []
-            for r in sorted(filtered, key=lambda x:
-                            {"confirmed":0,"breakout":1,"near_52w":2,"ema_cross":3,"watching":4}.get(x["Signal"],5)):
+            for r in filtered:
+                rs = r.get("RS Score")
                 rows.append({
-                    "Symbol"            : r["Symbol"],
-                    "Signal"            : label_map.get(r["Signal"], r["Signal"]),
-                    "CMP ₹"             : r["close"],
+                    "Symbol"             : r["Symbol"],
+                    "Signal"             : label_map.get(r["Signal"], r["Signal"]),
+                    "RS Score"           : f"{rs:+.2f}" if rs is not None else "—",
+                    "CMP ₹"              : r["close"],
                     "EMA 220 ₹"         : r["ema220"],
                     "% above EMA"       : f"{r['pct_above_ema']:+.2f}%",
                     "52W High ₹ (locked)": r["w52_high"],
