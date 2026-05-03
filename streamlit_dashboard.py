@@ -570,7 +570,9 @@ elif page == "🔍 Signal Scanner":
             st.warning("⚠️ Re-scanning will overwrite today's locked results. Use only if you suspect a data error.")
 
         # Load benchmark for RS calculation
-        bench_df_raw = fetch_data("^CRSLDX", "2y") or fetch_data("^NSEI", "2y")
+        bench_df_raw = fetch_data("^CRSLDX", "2y")
+        if bench_df_raw is None or bench_df_raw.empty:
+            bench_df_raw = fetch_data("^NSEI", "2y")
 
         results = []
         pb = st.progress(0, text="Scanning stocks...")
@@ -845,6 +847,8 @@ elif page == "📈 Nifty 500":
     with st.spinner("Loading benchmark data..."):
         df_n50  = fetch_data("^NSEI",   "5y")   # Nifty 50
         df_n500 = fetch_data("^CRSLDX", "5y")   # Nifty 500
+        if df_n500 is None or df_n500.empty:
+            df_n500 = fetch_data("^NSEI", "5y")
 
     # ── Tab selector ──
     idx_tab = st.radio("Select Index", ["Nifty 50", "Nifty 500", "Compare Both"],
