@@ -254,7 +254,7 @@ def get_signal_state(df):
             "close": round(c,2), "ema220": round(e,2),
             "w52_high": round(float(df["Close"].iloc[-252:].max()),2),
             "pct_from_52w": 0, "pct_above_ema": round((c-e)/e*100,2),
-            "sl_level": round(max(e,c*0.85),2), "vol20": round(vol20),
+            "sl_level": round(max(e,c*0.90),2), "vol20": round(vol20),
             "rsi": round(rsi,1), "change_pct": round(chg,2), "above_ema": c>e,
         }
 
@@ -274,7 +274,7 @@ def get_signal_state(df):
             "close": round(c,2), "ema220": round(e,2),
             "w52_high": round(w52_fixed,2),
             "pct_from_52w": round(p52,2), "pct_above_ema": round((c-e)/e*100,2),
-            "sl_level": round(max(e,c*0.85),2), "vol20": round(vol20),
+            "sl_level": round(max(e,c*0.90),2), "vol20": round(vol20),
             "rsi": round(rsi,1), "change_pct": round(chg,2), "above_ema": c>e,
             "reset_reason": "Broke below EMA 220 after cross",
         }
@@ -309,7 +309,7 @@ def get_signal_state(df):
         "w52_high"        : round(w52_fixed, 2),
         "pct_from_52w"    : round(p52, 2),
         "pct_above_ema"   : round((c-e)/e*100, 2),
-        "sl_level"        : round(max(e, c*0.85), 2),
+        "sl_level"        : round(max(e, c*0.90), 2),
         "vol20"           : round(vol20),
         "rsi"             : round(rsi, 1),
         "change_pct"      : round(chg, 2),
@@ -722,6 +722,177 @@ elif page == "💼 My Positions":
         st.session_state["positions"] = []
 
     # ── Add position form ──
+    # ── Realised P&L Section ──
+    st.markdown("---")
+    st.markdown("### 📒 Realised P&L — Closed Trades")
+
+    if "closed_trades" not in st.session_state:
+        st.session_state["closed_trades"] = []
+
+    closed = st.session_state["closed_trades"]
+
+    # Add closed trade form
+    with st.expander("➕ Log a Closed Trade"):
+        cc1,cc2,cc3,cc4,cc5,cc6 = st.columns(6)
+        with cc1: ct_sym  = st.text_input("Symbol", key="ct_sym", placeholder="BHEL").upper().strip()
+        with cc2: ct_ep   = st.number_input("Entry Price ₹", min_value=0.0, step=0.5, key="ct_ep")
+        with cc3: ct_xp   = st.number_input("Exit Price ₹",  min_value=0.0, step=0.5, key="ct_xp")
+        with cc4: ct_sh   = st.number_input("Shares", min_value=1, step=1, key="ct_sh")
+        with cc5: ct_edt  = st.date_input("Entry Date", key="ct_edt")
+        with cc6: ct_xdt  = st.date_input("Exit Date",  key="ct_xdt")
+        ct_reason = st.selectbox("Exit Reason", ["Trailing SL", "+40% Profit (50%)", "+100% Profit (25%)", "Manual Exit", "End of Backtest"], key="ct_reason")
+        if st.button("Log Trade", type="primary", key="ct_add"):
+            if ct_sym and ct_ep > 0 and ct_xp > 0 and ct_sh > 0:
+                pnl_rs  = round((ct_xp - ct_ep) * ct_sh * (1 - 0.005), 2)  # after 0.5% cost
+                pnl_pct = round((ct_xp - ct_ep) / ct_ep * 100, 2)
+                hold    = (ct_xdt - ct_edt).days
+                st.session_state["closed_trades"].append({
+                    "symbol"      : ct_sym,
+                    "entry_price" : ct_ep,
+                    "exit_price"  : ct_xp,
+                    "shares"      : ct_sh,
+                    "entry_date"  : str(ct_edt),
+                    "exit_date"   : str(ct_xdt),
+                    "pnl_rs"      : pnl_rs,
+                    "pnl_pct"     : pnl_pct,
+                    "hold_days"   : hold,
+                    "reason"      : ct_reason,
+                })
+                st.success(f"✅ Logged {ct_sym} — P&L: ₹{pnl_rs:+,.0f} ({pnl_pct:+.2f}%)")
+                st.rerun()
+            else:
+                st.error("Fill all fields")
+
+    if closed:
+        # ── Summary metrics ──
+        total_realised  = sum(t["pnl_rs"] for t in closed)
+        wins            = [t for t in closed if t["pnl_rs"] > 0]
+        losses          = [t for t in closed if t["pnl_rs"] <= 0]
+        win_rate        = len(wins)/len(closed)*100 if closed else 0
+        avg_win         = sum(t["pnl_pct"] for t in wins)/len(wins) if wins else 0
+        avg_loss        = sum(t["pnl_pct"] for t in losses)/len(losses) if losses else 0
+        profit_factor   = sum(t["pnl_rs"] for t in wins)/abs(sum(t["pnl_rs"] for t in losses)) if losses and sum(t["pnl_rs"] for t in losses) != 0 else float("inf")
+
+        rc1,rc2,rc3,rc4,rc5,rc6 = st.columns(6)
+        rc1.metric("Realised P&L",   f"₹{total_realised:+,.0f}")
+        rc2.metric("Total Trades",   len(closed))
+        rc3.metric("Win Rate",       f"{win_rate:.1f}%")
+        rc4.metric("Avg Win",        f"{avg_win:+.1f}%")
+        rc5.metric("Avg Loss",       f"{avg_loss:+.1f}%")
+        rc6.metric("Profit Factor",  f"{profit_factor:.2f}" if profit_factor != float("inf") else "∞")
+
+        st.markdown("---")
+
+        # ── Unrealised vs Realised comparison ──
+        total_unrealised = sum(p["pnl_rs"] for p in live) if live else 0
+        uc1, uc2, uc3 = st.columns(3)
+        uc1.metric("Unrealised P&L (open)",  f"₹{total_unrealised:+,.0f}",
+                   f"{total_unrealised/(total_inv)*100:+.2f}%" if total_inv > 0 else "")
+        uc2.metric("Realised P&L (closed)",  f"₹{total_realised:+,.0f}")
+        uc3.metric("Total Combined P&L",     f"₹{total_unrealised+total_realised:+,.0f}")
+
+        # ── Realised P&L chart ──
+        rc1_chart, rc2_chart = st.columns(2)
+
+        with rc1_chart:
+            st.markdown("#### Realised P&L per Trade")
+            t_syms   = [f"{t['symbol']} ({t['exit_date'][5:]})" for t in closed]
+            t_pnls   = [t["pnl_rs"] for t in closed]
+            t_colors = ["#34d399" if v >= 0 else "#f87171" for v in t_pnls]
+            fig_real = go.Figure(data=[go.Bar(
+                x=t_syms, y=t_pnls,
+                marker_color=t_colors,
+                text=[f"₹{v:+,.0f}" for v in t_pnls],
+                textposition="outside",
+            )])
+            fig_real.update_layout(
+                paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
+                font=dict(color="#e0e0f0", size=11), height=280,
+                margin=dict(l=10, r=10, t=10, b=60),
+                xaxis=dict(gridcolor="#1a1a2e", tickangle=-30),
+                yaxis=dict(gridcolor="#1a1a2e", title="P&L (₹)"),
+                showlegend=False,
+            )
+            fig_real.add_hline(y=0, line_color="#888", line_dash="dot", opacity=0.5)
+            st.plotly_chart(fig_real, use_container_width=True)
+
+        with rc2_chart:
+            st.markdown("#### Win / Loss Split")
+            fig_wl = go.Figure(data=[go.Pie(
+                labels=["Wins", "Losses"],
+                values=[len(wins), len(losses)],
+                hole=0.5,
+                marker=dict(colors=["#34d399","#f87171"]),
+                textinfo="label+value+percent",
+            )])
+            fig_wl.update_layout(
+                paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
+                font=dict(color="#e0e0f0", size=12),
+                height=280, margin=dict(l=10, r=10, t=10, b=10),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_wl, use_container_width=True)
+
+        # ── Closed trades table ──
+        st.markdown("#### Closed Trades Log")
+        trade_rows = []
+        for t in reversed(closed):  # most recent first
+            trade_rows.append({
+                "Symbol"      : t["symbol"],
+                "Entry Date"  : t["entry_date"],
+                "Exit Date"   : t["exit_date"],
+                "Entry ₹"     : t["entry_price"],
+                "Exit ₹"      : t["exit_price"],
+                "Shares"      : t["shares"],
+                "P&L ₹"       : f"₹{t['pnl_rs']:+,.0f}",
+                "P&L %"       : f"{t['pnl_pct']:+.2f}%",
+                "Hold Days"   : t["hold_days"],
+                "Exit Reason" : t["reason"],
+            })
+        st.dataframe(pd.DataFrame(trade_rows), hide_index=True, use_container_width=True)
+
+        # Delete last trade button
+        if st.button("🗑 Delete Last Entry", type="secondary"):
+            st.session_state["closed_trades"].pop()
+            st.rerun()
+    else:
+        st.info("No closed trades yet. Log your first exit above when you sell a position.")
+
+    st.markdown("---")
+
+    # ── Export / Import positions ──
+    with st.expander("📤 Export / Import All Data (sync across devices)"):
+        import json as _json
+        all_data = {
+            "positions"    : st.session_state.get("positions", []),
+            "closed_trades": st.session_state.get("closed_trades", []),
+        }
+        export_json = _json.dumps(all_data, indent=2)
+
+        st.markdown("**Export — copy this and save it:**")
+        st.code(export_json, language="json")
+
+        st.markdown("**Import — paste here:**")
+        imported = st.text_area("Paste data here", height=150,
+                                placeholder='{"positions": [...], "closed_trades": [...]}')
+        if st.button("Import All Data", type="primary"):
+            try:
+                parsed = _json.loads(imported)
+                if isinstance(parsed, dict):
+                    st.session_state["positions"]     = parsed.get("positions", [])
+                    st.session_state["closed_trades"] = parsed.get("closed_trades", [])
+                    st.success(f"✅ Imported {len(st.session_state['positions'])} positions "
+                               f"and {len(st.session_state['closed_trades'])} closed trades!")
+                    st.rerun()
+                elif isinstance(parsed, list):
+                    st.session_state["positions"] = parsed
+                    st.success(f"✅ Imported {len(parsed)} positions!")
+                    st.rerun()
+                else:
+                    st.error("Invalid format")
+            except Exception as e:
+                st.error(f"Error: {e}")
+
     with st.expander("➕ Add / Update Position", expanded=len(st.session_state["positions"])==0):
         c1,c2,c3,c4,c5 = st.columns([2,2,1,2,1])
         with c1: sym  = st.text_input("NSE Symbol", key="add_sym", placeholder="KAYNES").upper().strip()
@@ -736,7 +907,7 @@ elif page == "💼 My Positions":
                     existing.append({
                         "symbol": sym, "entry_price": float(ep),
                         "shares": int(sh), "entry_date": str(dt),
-                        "trailing_sl": round(ep * 0.85, 2)
+                        "trailing_sl": round(ep * 0.90, 2)
                     })
                     st.session_state["positions"] = existing
                     st.success(f"Added {sym}")
@@ -760,7 +931,7 @@ elif page == "💼 My Positions":
                 cmp = float(row["Close"]); ema = float(row["EMA220"])
                 ep  = pos["entry_price"]; sh = pos["shares"]
                 sl  = pos["trailing_sl"]; pct = (cmp-ep)/ep*100
-                nsl = round(max(ema, cmp*0.85), 2)
+                nsl = round(max(ema, cmp*0.90), 2)
                 entry_dt = datetime.datetime.strptime(pos["entry_date"], "%Y-%m-%d")
                 days = (datetime.datetime.now() - entry_dt).days
                 live.append({**pos, "cmp":cmp, "ema220":round(ema,2),
@@ -789,17 +960,97 @@ elif page == "💼 My Positions":
         total_pnl = total_cur - total_inv
         total_pct = total_pnl/total_inv*100 if total_inv > 0 else 0
 
-        c1,c2,c3,c4,c5 = st.columns(5)
-        c1.metric("Invested",      f"₹{total_inv:,.0f}")
-        c2.metric("Current Value", f"₹{total_cur:,.0f}")
-        c3.metric("Total P&L",     f"₹{total_pnl:+,.0f}", f"{total_pct:+.2f}%")
-        c4.metric("Open Positions",f"{len(live)} / 8")
-        c5.metric("Best Performer",max(live, key=lambda x:x["pnl_pct"])["symbol"] if live else "—",
+        c1,c2,c3,c4,c5,c6 = st.columns(6)
+        c1.metric("Invested",       f"\u20b9{total_inv:,.0f}")
+        c2.metric("Current Value",  f"\u20b9{total_cur:,.0f}")
+        c3.metric("Total P&L",      f"\u20b9{total_pnl:+,.0f}", f"{total_pct:+.2f}%")
+        c4.metric("Open Positions", f"{len(live)} / 8")
+        c5.metric("Free Capital",   f"\u20b9{max(0, 300000-total_inv):,.0f}")
+        c6.metric("Best Performer", max(live, key=lambda x:x["pnl_pct"])["symbol"] if live else "\u2014",
                   f"{max(live, key=lambda x:x['pnl_pct'])['pnl_pct']:+.2f}%" if live else "")
 
         st.markdown("---")
 
+        # ── Portfolio Charts ──
+        chart_col1, chart_col2 = st.columns(2)
+
+        with chart_col1:
+            st.markdown("#### Portfolio Allocation")
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=[p["symbol"] for p in live],
+                values=[round(p["cmp"]*p["shares"], 0) for p in live],
+                hole=0.5,
+                textinfo="label+percent",
+                hovertemplate="<b>%{label}</b><br>Value: \u20b9%{value:,.0f}<br>%{percent}<extra></extra>",
+                marker=dict(colors=["#7c6af7","#34d399","#f87171","#fbbf24",
+                                    "#22d3ee","#a89cff","#6ee7b7","#fca5a5"]),
+            )])
+            fig_pie.update_layout(
+                paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
+                font=dict(color="#e0e0f0", size=12),
+                showlegend=False, height=320,
+                margin=dict(l=10, r=10, t=10, b=10),
+                annotations=[dict(text=f"\u20b9{total_cur:,.0f}",
+                    x=0.5, y=0.5, font_size=14,
+                    font_color="#e0e0f0", showarrow=False)]
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        with chart_col2:
+            st.markdown("#### P&L by Stock")
+            pnl_vals = [p["pnl_rs"] for p in live]
+            colors   = ["#34d399" if v >= 0 else "#f87171" for v in pnl_vals]
+            fig_bar  = go.Figure(data=[go.Bar(
+                x=[p["symbol"] for p in live], y=pnl_vals,
+                marker_color=colors,
+                text=[f"\u20b9{v:+,.0f}" for v in pnl_vals],
+                textposition="outside",
+                hovertemplate="<b>%{x}</b><br>P&L: \u20b9%{y:+,.0f}<extra></extra>",
+            )])
+            fig_bar.update_layout(
+                paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
+                font=dict(color="#e0e0f0", size=11), height=320,
+                margin=dict(l=10, r=10, t=10, b=10),
+                xaxis=dict(gridcolor="#1a1a2e"),
+                yaxis=dict(gridcolor="#1a1a2e", title="P&L (\u20b9)"),
+                showlegend=False,
+            )
+            fig_bar.add_hline(y=0, line_color="#888", line_dash="dot", opacity=0.5)
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        # ── Invested vs Current Value comparison ──
+        st.markdown("#### Invested vs Current Value per Stock")
+        fig_comp = go.Figure()
+        fig_comp.add_trace(go.Bar(
+            name="Invested",
+            x=[p["symbol"] for p in live],
+            y=[round(p["entry_price"]*p["shares"], 0) for p in live],
+            marker_color="#3a3a55",
+            hovertemplate="<b>%{x}</b><br>Invested: \u20b9%{y:,.0f}<extra></extra>",
+        ))
+        fig_comp.add_trace(go.Bar(
+            name="Current Value",
+            x=[p["symbol"] for p in live],
+            y=[round(p["cmp"]*p["shares"], 0) for p in live],
+            marker_color=["#34d399" if p["pnl_pct"]>=0 else "#f87171" for p in live],
+            hovertemplate="<b>%{x}</b><br>Current: \u20b9%{y:,.0f}<extra></extra>",
+        ))
+        fig_comp.update_layout(
+            barmode="group",
+            paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
+            font=dict(color="#e0e0f0", size=11), height=300,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis=dict(gridcolor="#1a1a2e"),
+            yaxis=dict(gridcolor="#1a1a2e", title="Value (\u20b9)"),
+            legend=dict(bgcolor="#13131f", bordercolor="#2a2a3d",
+                       font=dict(color="#e0e0f0")),
+        )
+        st.plotly_chart(fig_comp, use_container_width=True)
+
+        st.markdown("---")
+
         # ── Position cards ──
+
         cols = st.columns(min(len(live), 3))
         for i, p in enumerate(live):
             with cols[i % 3]:
@@ -1065,8 +1316,8 @@ elif page == "🧮 Position Sizer":
     # ── Core Calculations ──
     risk_pct    = 0.015                                    # 1.5% risk
     risk_amount = capital * risk_pct                       # Rs at risk
-    sl_15pct    = entry_price * 0.85                       # 15% below entry
-    initial_sl  = round(max(ema220_val, sl_15pct), 2)     # strategy SL
+    sl_10pct    = entry_price * 0.90                       # 10% below entry below entry
+    initial_sl  = round(max(ema220_val, sl_10pct), 2)     # strategy SL
     risk_per_sh = entry_price - initial_sl                 # risk per share
 
     if risk_per_sh <= 0:
@@ -1114,10 +1365,10 @@ elif page == "🧮 Position Sizer":
     with r1:
         st.markdown("**Step 1 — Stop Loss**")
         sl_data = {
-            "Rule"       : ["15% below entry", "EMA 220 level", "Initial SL (higher of both)"],
-            "Value ₹"    : [f"₹{sl_15pct:,.2f}", f"₹{ema220_val:,.2f}", f"₹{initial_sl:,.2f}"],
-            "Used?"      : ["✓" if sl_15pct >= ema220_val else "—",
-                            "✓" if ema220_val > sl_15pct else "—",
+            "Rule"       : ["10% below entry", "EMA 220 level", "Initial SL (higher of both)"],
+            "Value ₹"    : [f"₹{sl_10pct:,.2f}", f"₹{ema220_val:,.2f}", f"₹{initial_sl:,.2f}"],
+            "Used?"      : ["✓" if sl_10pct >= ema220_val else "—",
+                            "✓" if ema220_val > sl_10pct else "—",
                             "✅"]
         }
         st.dataframe(pd.DataFrame(sl_data), hide_index=True, use_container_width=True)
@@ -1181,7 +1432,7 @@ elif page == "🧮 Position Sizer":
     trail_rows = []
     for mult in levels:
         price     = entry_price * mult
-        trail_sl  = round(price * 0.85, 2)
+        trail_sl  = round(price * 0.90, 2)
         locked_in = round((trail_sl - entry_price) / entry_price * 100, 2)
         trail_rows.append({
             "If Friday Close"   : f"₹{price:,.2f} ({(mult-1)*100:+.0f}%)",
