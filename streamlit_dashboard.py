@@ -231,16 +231,21 @@ def get_signal_state(df):
     w52_fixed   = None   # 52W high locked on cross day
     cross_date  = None
 
-    for i in range(min(62, len(df)-2), 0, -1):
+    # Search from TODAY backwards — find most recent cross where stock
+    # has stayed above EMA 220 continuously from that cross to today
+    for i in range(1, min(62, len(df)-2)):
         c1 = float(df["Close"].iloc[-i]);   e1 = float(df["EMA220"].iloc[-i])
         c0 = float(df["Close"].iloc[-i-1]); e0 = float(df["EMA220"].iloc[-i-1])
+        # Going back day by day — first day we find below EMA, stop
+        if c1 <= e1:
+            break
+        # Found a cross (yesterday was below, today above)
         if c1 > e1 and c0 <= e0:
-            cross_idx  = i          # i bars ago
+            cross_idx  = i
             cross_date = df.index[-i]
-            # Lock 52W high = max close in 365 calendar days BEFORE cross day
-            cutoff = cross_date - pd.Timedelta(days=365)
-            hist   = df["Close"][(df.index >= cutoff) & (df.index < cross_date)]
-            w52_fixed = float(hist.max()) if not hist.empty else float(df["Close"].iloc[:-i].max())
+            cutoff     = cross_date - pd.Timedelta(days=365)
+            hist       = df["Close"][(df.index >= cutoff) & (df.index < cross_date)]
+            w52_fixed  = float(hist.max()) if not hist.empty else float(df["Close"].iloc[:-i].max())
             break
 
     # ── No cross found in last 60 days → no signal ──
