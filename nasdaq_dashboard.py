@@ -212,15 +212,14 @@ def get_signal_state(df):
     if days_since_cross <= 1:
         state = "ema_cross"
     elif c > w52_fixed:
-        if days_since_cross >= 10:
-            last10   = df.iloc[-10:]
-            step3_ok = all(
-                float(last10["Close"].iloc[j]) > float(last10["EMA220"].iloc[j])
-                for j in range(len(last10))
-            )
-            state = "confirmed" if (step3_ok and c > w52_fixed) else "breakout"
-        else:
-            state = "breakout"
+        # Broke 52W high + stayed above EMA 220 every day since cross → CONFIRMED
+        break_idx = None
+        for j in range(len(post_cross)):
+            if float(post_cross["Close"].iloc[j]) > w52_fixed:
+                break_idx = j
+                break
+        days_since_break = (len(post_cross) - 1 - break_idx) if break_idx is not None else 0
+        state = "confirmed"
     elif p52 > -3:
         state = "near_52w"
     else:

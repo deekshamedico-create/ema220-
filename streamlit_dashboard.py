@@ -282,20 +282,15 @@ def get_signal_state(df):
         state = "ema_cross"
 
     # Step 2: Has price broken above w52_fixed yet?
+    # If yes AND stayed above EMA 220 every day since cross → CONFIRMED
     elif c > w52_fixed:
-        # Check if Step 3 is complete: last 10 days all above EMA 220 and still above 52W
-        if days_since_cross >= 10:
-            last10 = df.iloc[-10:]
-            step3_ok = all(
-                float(last10["Close"].iloc[j]) > float(last10["EMA220"].iloc[j])
-                for j in range(len(last10))
-            )
-            if step3_ok and c > w52_fixed:
-                state = "confirmed"   # full signal — ready to trade
-            else:
-                state = "breakout"    # broke 52W, in confirmation window
-        else:
-            state = "breakout"
+        break_idx = None
+        for j in range(len(post_cross)):
+            if float(post_cross["Close"].iloc[j]) > w52_fixed:
+                break_idx = j
+                break
+        days_since_break = (len(post_cross) - 1 - break_idx) if break_idx is not None else 0
+        state = "confirmed"   # broke 52W high + stayed above EMA 220 = trade ready
 
     # Step 2 not yet triggered — watching
     elif p52 > -3:
@@ -304,19 +299,20 @@ def get_signal_state(df):
         state = "watching"    # above EMA, waiting for 52W break
 
     info = {
-        "close"          : round(c, 2),
-        "ema220"         : round(e, 2),
-        "w52_high"       : round(w52_fixed, 2),   # correctly locked to cross day
-        "pct_from_52w"   : round(p52, 2),
-        "pct_above_ema"  : round((c-e)/e*100, 2),
-        "sl_level"       : round(max(e, c*0.85), 2),
-        "vol20"          : round(vol20),
-        "rsi"            : round(rsi, 1),
-        "change_pct"     : round(chg, 2),
-        "above_ema"      : c > e,
+        "close"           : round(c, 2),
+        "ema220"          : round(e, 2),
+        "w52_high"        : round(w52_fixed, 2),
+        "pct_from_52w"    : round(p52, 2),
+        "pct_above_ema"   : round((c-e)/e*100, 2),
+        "sl_level"        : round(max(e, c*0.85), 2),
+        "vol20"           : round(vol20),
+        "rsi"             : round(rsi, 1),
+        "change_pct"      : round(chg, 2),
+        "above_ema"       : c > e,
         "days_since_cross": days_since_cross,
-        "cross_date"     : str(cross_date.date()) if cross_date else "—",
-        "w52_locked_on"  : str(cross_date.date()) if cross_date else "—",
+        "days_since_break": days_since_break if c > w52_fixed and break_idx is not None else 0,
+        "cross_date"      : str(cross_date.date()) if cross_date else "—",
+        "w52_locked_on"   : str(cross_date.date()) if cross_date else "—",
     }
     return state, info
 
@@ -671,6 +667,43 @@ elif page == "🔍 Signal Scanner":
                     df = add_indicators(df_raw)
                     fig = build_chart(df, pick, 180)
                     st.plotly_chart(fig, use_container_width=True)
+
+        # ── Debug any stock ──
+        st.markdown("---")
+        st.markdown("#### 🔎 Debug any stock — see exactly why it passed or failed")
+        debug_sym = st.text_input("Enter NSE symbol to debug", placeholder="e.g. NESTLEIND").upper().strip()
+        if debug_sym:
+            df_dbg = fetch_data(f"{debug_sym}.NS", "2y")
+            if df_dbg is None:
+                st.error(f"Could not load {debug_sym}")
+            else:
+                df_dbg = add_indicators(df_dbg)
+                state_dbg, info_dbg = get_signal_state(df_dbg)
+
+                st.markdown(f"**Signal state: `{state_dbg}`**")
+                d1,d2,d3,d4 = st.columns(4)
+                d1.metric("CMP", f"₹{info_dbg.get('close','—')}")
+                d2.metric("EMA 220", f"₹{info_dbg.get('ema220','—')}")
+                d3.metric("52W High (locked)", f"₹{info_dbg.get('w52_high','—')}")
+                d4.metric("% from 52W", f"{info_dbg.get('pct_from_52w','—')}%")
+
+                d5,d6,d7,d8 = st.columns(4)
+                d5.metric("EMA Cross Date", info_dbg.get("cross_date","—"))
+                d6.metric("Days since cross", info_dbg.get("days_since_cross","—"))
+                d7.metric("Days since 52W break", info_dbg.get("days_since_break","—"))
+                d8.metric("Above EMA 220", "✅ Yes" if info_dbg.get("above_ema") else "❌ No")
+
+                # Show last 20 days close vs EMA
+                st.markdown("**Last 20 days — Close vs EMA 220 (check for any day below EMA):**")
+                last20 = df_dbg[["Close","EMA220"]].tail(20).copy()
+                last20["Above EMA?"] = last20["Close"] > last20["EMA220"]
+                last20["Close"] = last20["Close"].round(2)
+                last20["EMA220"] = last20["EMA220"].round(2)
+                last20.index = last20.index.strftime("%d %b %Y")
+                st.dataframe(last20, use_container_width=True)
+
+                if "reset_reason" in info_dbg:
+                    st.error(f"❌ Reset reason: {info_dbg['reset_reason']}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
