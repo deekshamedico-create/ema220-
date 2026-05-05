@@ -206,7 +206,7 @@ def get_signal_state(df):
         return "none", {
             "close": round(c,2), "ema220": round(e,2),
             "w52_high": round(w52_fixed,2), "pct_from_52w": round(p52,2),
-            "pct_above_ema": round((c-e)/e*100,2), "sl_level": round(max(e,c*0.85),2),
+            "pct_above_ema": round((c-e)/e*100,2), "sl_level": round(max(e,c*0.90),2),
             "vol20": round(vol20), "rsi": round(rsi,1), "change_pct": round(chg,2),
             "above_ema": c>e, "reset_reason": "Broke below EMA 220 after cross",
         }
@@ -235,7 +235,7 @@ def get_signal_state(df):
         "w52_high"        : round(w52_fixed, 2),
         "pct_from_52w"    : round(p52, 2),
         "pct_above_ema"   : round((c-e)/e*100, 2),
-        "sl_level"        : round(max(e, c*0.85), 2),
+        "sl_level"        : round(max(e, c*0.90), 2),
         "vol20"           : round(vol20),
         "rsi"             : round(rsi, 1),
         "change_pct"      : round(chg, 2),
@@ -571,7 +571,7 @@ elif page == "💼 My Positions":
                 c   = float(row["Close"]); e = float(row["EMA220"])
                 ep  = pos["entry_price"]; sh = pos["shares"]
                 sl  = pos["trailing_sl"]; pct = (c-ep)/ep*100
-                nsl = round(max(e, c*0.85), 2)
+                nsl = round(max(e, c*0.90), 2)
                 entry_dt = datetime.datetime.strptime(pos["entry_date"], "%Y-%m-%d")
                 days = (datetime.datetime.now() - entry_dt).days
                 live.append({**pos,"cmp":c,"ema220":round(e,2),
@@ -785,7 +785,7 @@ elif page == "🧮 Position Sizer":
                                        value=round(cmp_live, 2))
 
     st.markdown("---")
-    sl_15      = entry_price * 0.85
+    sl_15      = entry_price * 0.90
     initial_sl = round(max(ema220_val, sl_15), 2)
     risk_amt   = capital * 0.015
     risk_per_sh= entry_price - initial_sl
@@ -863,7 +863,7 @@ elif page == "🧮 Position Sizer":
     trail_rows = []
     for mult in [1.05,1.10,1.20,1.30,1.40,1.60,1.80,2.00]:
         price    = entry_price * mult
-        trail_sl = round(price * 0.85, 2)
+        trail_sl = round(price * 0.90, 2)
         locked   = round((trail_sl - entry_price)/entry_price*100, 2)
         trail_rows.append({
             "If Price"       : f"${price:,.2f} ({(mult-1)*100:+.0f}%)",
@@ -889,7 +889,7 @@ elif page == "🧮 Position Sizer":
                 df_b   = add_indicators(df_b)
                 rb     = df_b.iloc[-1]
                 cb     = float(rb["Close"]); eb = float(rb["EMA220"])
-                sl_b   = round(max(eb, cb*0.85), 2)
+                sl_b   = round(max(eb, cb*0.90), 2)
                 rps_b  = cb - sl_b
                 if rps_b <= 0:
                     rows.append({"Symbol":s,"Price":f"${cb:,.2f}","EMA220":f"${eb:,.2f}",
