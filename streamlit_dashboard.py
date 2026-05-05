@@ -227,27 +227,39 @@ def read_positions_from_sheet():
 
 @st.cache_data(ttl=60)
 def read_closed_from_sheet():
-    """Read closed trades from Google Sheet."""
+    """Read closed trades from Google Sheet Closed tab."""
     try:
         df = pd.read_csv(CLOSED_URL)
         df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
+
+        # Critical check: if the sheet has exit_price column, it is truly the Closed tab
+        # If not, it means Google returned the wrong sheet (Positions tab fallback)
+        if "exit_price" not in df.columns:
+            return []  # Closed tab is empty or wrong sheet returned
+
         trades = []
         for _, row in df.iterrows():
-            if pd.isna(row.get("symbol","")) or str(row.get("symbol","")).strip() == "":
+            sym = str(row.get("symbol","")).strip().upper()
+            if not sym or sym == "NAN" or sym == "SYMBOL":
                 continue
             ep   = float(row.get("entry_price", 0))
             xp   = float(row.get("exit_price",  0))
-            sh   = int(row.get("shares", 0))
+            sh   = int(float(row.get("shares", 0)))
+
+            # Skip if exit price is 0 or missing — not a valid closed trade
+            if xp == 0 or ep == 0:
+                continue
+
             pnl  = round((xp - ep) * sh * 0.995, 2)
             pct  = round((xp - ep) / ep * 100, 2) if ep > 0 else 0
             try:
-                edt  = pd.to_datetime(str(row.get("entry_date",""))).date()
-                xdt  = pd.to_datetime(str(row.get("exit_date",""))).date()
+                edt  = pd.to_datetime(str(row.get("entry_date","")), dayfirst=True).date()
+                xdt  = pd.to_datetime(str(row.get("exit_date","")),  dayfirst=True).date()
                 hold = (xdt - edt).days
             except:
                 hold = 0
             trades.append({
-                "symbol"      : str(row["symbol"]).strip().upper(),
+                "symbol"      : sym,
                 "entry_price" : ep,
                 "exit_price"  : xp,
                 "shares"      : sh,
@@ -260,8 +272,7 @@ def read_closed_from_sheet():
             })
         return trades
     except Exception as e:
-        st.warning(f"Could not read closed trades from Google Sheet: {e}")
-        return []
+        return []  # Empty closed tab — no error needed
 
 def get_sheet_link():
     """Return clickable Google Sheet link."""
@@ -998,7 +1009,14 @@ elif page == "💼 My Positions":
                 ep  = pos["entry_price"]; sh = pos["shares"]
                 sl  = pos["trailing_sl"]; pct = (cmp-ep)/ep*100
                 nsl = round(max(ema, cmp*0.90), 2)
-                entry_dt = datetime.datetime.strptime(pos["entry_date"], "%Y-%m-%d")
+                entry_date_str = str(pos["entry_date"]).strip()
+                try:
+                    entry_dt = datetime.datetime.strptime(entry_date_str, "%Y-%m-%d")
+                except:
+                    try:
+                        entry_dt = datetime.datetime.strptime(entry_date_str, "%d/%m/%Y")
+                    except:
+                        entry_dt = datetime.datetime.now()
                 days = (datetime.datetime.now() - entry_dt).days
                 live.append({**pos, "cmp":cmp, "ema220":round(ema,2),
                              "pnl_pct":round(pct,2), "pnl_rs":round((cmp-ep)*sh,2),
