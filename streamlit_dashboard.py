@@ -805,10 +805,10 @@ elif page == "💼 My Positions":
     st.markdown("---")
     st.markdown("### 📒 Realised P&L — Closed Trades")
 
-    if "closed_trades" not in st.session_state:
-        st.session_state["closed_trades"] = []
-
-    closed = closed_trades  # loaded from Google Sheet
+    # All data from Google Sheet — safe references
+    closed      = closed
+    _live_data  = st.session_state.get("_live_cache", [])
+    _total_inv  = sum(p["entry_price"]*p["shares"] for p in _live_data) if _live_data else 0
 
     # Add closed trade form
     with st.expander("➕ Log a Closed Trade"):
@@ -825,20 +825,9 @@ elif page == "💼 My Positions":
                 pnl_rs  = round((ct_xp - ct_ep) * ct_sh * (1 - 0.005), 2)  # after 0.5% cost
                 pnl_pct = round((ct_xp - ct_ep) / ct_ep * 100, 2)
                 hold    = (ct_xdt - ct_edt).days
-                st.session_state["closed_trades"].append({
-                    "symbol"      : ct_sym,
-                    "entry_price" : ct_ep,
-                    "exit_price"  : ct_xp,
-                    "shares"      : ct_sh,
-                    "entry_date"  : str(ct_edt),
-                    "exit_date"   : str(ct_xdt),
-                    "pnl_rs"      : pnl_rs,
-                    "pnl_pct"     : pnl_pct,
-                    "hold_days"   : hold,
-                    "reason"      : ct_reason,
-                })
-                st.success(f"✅ Logged {ct_sym} — P&L: ₹{pnl_rs:+,.0f} ({pnl_pct:+.2f}%)")
-                st.rerun()
+                st.success(f"✅ {ct_sym} — P&L: ₹{pnl_rs:+,.0f} ({pnl_pct:+.2f}%)")
+                st.info(f"👉 Please add this to your [Google Sheet]({get_sheet_link()}) Closed tab: "
+                        f"{ct_sym} | {ct_ep} | {ct_xp} | {ct_sh} | {ct_edt} | {ct_xdt} | {ct_reason}")
             else:
                 st.error("Fill all fields")
 
@@ -863,11 +852,10 @@ elif page == "💼 My Positions":
         st.markdown("---")
 
         # ── Unrealised vs Realised comparison ──
-        _live_data = st.session_state.get("_live_cache", [])
         total_unrealised = sum(p["pnl_rs"] for p in _live_data) if _live_data else 0
         uc1, uc2, uc3 = st.columns(3)
         uc1.metric("Unrealised P&L (open)",  f"₹{total_unrealised:+,.0f}",
-                   f"{total_unrealised/(total_inv)*100:+.2f}%" if total_inv > 0 else "")
+                   f"{total_unrealised/_total_inv*100:+.2f}%" if _total_inv > 0 else "—")
         uc2.metric("Realised P&L (closed)",  f"₹{total_realised:+,.0f}")
         uc3.metric("Total Combined P&L",     f"₹{total_unrealised+total_realised:+,.0f}")
 
@@ -932,9 +920,7 @@ elif page == "💼 My Positions":
         st.dataframe(pd.DataFrame(trade_rows), hide_index=True, use_container_width=True)
 
         # Delete last trade button
-        if st.button("🗑 Delete Last Entry", type="secondary"):
-            st.session_state["closed_trades"].pop()
-            st.rerun()
+        st.info("To delete a trade, remove it from the Closed tab in your Google Sheet, then click Reload.")
     else:
         st.info("No closed trades yet. Log your first exit above when you sell a position.")
 
