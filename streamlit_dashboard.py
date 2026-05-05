@@ -796,7 +796,7 @@ elif page == "💼 My Positions":
 
     # Keep in session state for compatibility
     st.session_state["positions"]     = positions
-    st.session_state["closed_trades"] = closed_trades
+    # closed trades loaded fresh from sheet when needed
 
 
 
@@ -806,7 +806,7 @@ elif page == "💼 My Positions":
     st.markdown("### 📒 Realised P&L — Closed Trades")
 
     # All data from Google Sheet — safe references
-    closed      = closed
+    closed      = read_closed_from_sheet()
     _live_data  = st.session_state.get("_live_cache", [])
     _total_inv  = sum(p["entry_price"]*p["shares"] for p in _live_data) if _live_data else 0
 
