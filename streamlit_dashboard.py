@@ -1147,12 +1147,45 @@ elif page == "💼 My Positions":
 
         # ── Position cards ──
 
+        # ── Holdings Summary Table ──
+        st.markdown("#### 📋 Holdings — Individual P&L")
+        total_invested = sum(p["entry_price"]*p["shares"] for p in live)
+        table_rows = []
+        for p in live:
+            invested   = p["entry_price"] * p["shares"]
+            curr_val   = p["cmp"] * p["shares"]
+            port_pct   = invested / total_invested * 100 if total_invested > 0 else 0
+            table_rows.append({
+                "Stock"          : p["symbol"],
+                "Entry ₹"        : f"₹{p['entry_price']:,.2f}",
+                "CMP ₹"          : f"₹{p['cmp']:,.2f}",
+                "Shares"         : p["shares"],
+                "Invested ₹"     : f"₹{invested:,.0f}",
+                "Current Val ₹"  : f"₹{curr_val:,.0f}",
+                "P&L ₹"          : f"₹{p['pnl_rs']:+,.0f}",
+                "P&L %"          : f"{p['pnl_pct']:+.2f}%",
+                "% of Portfolio" : f"{port_pct:.1f}%",
+                "Trailing SL ₹"  : f"₹{p['trailing_sl']:,.2f}",
+                "Updated SL ₹"   : f"₹{p['new_sl']:,.2f}" + (" ↑" if p["sl_updated"] else ""),
+                "Days Held"      : p["hold_days"],
+            })
+        st.dataframe(
+            table_rows,
+            use_container_width=True,
+            height=min(400, 50 + len(table_rows)*35),
+        )
+
+        st.markdown("---")
+        st.markdown("#### 📊 Position Cards")
         cols = st.columns(min(len(live), 3))
         for i, p in enumerate(live):
             with cols[i % 3]:
                 pnl_color = "green" if p["pnl_pct"] >= 0 else "red"
                 bar_pct   = min(100, max(0, (p["cmp"]-p["trailing_sl"])/p["trailing_sl"]*500))
                 bar_color = "#f87171" if bar_pct < 20 else "#fbbf24" if bar_pct < 50 else "#34d399"
+                invested  = p["entry_price"] * p["shares"]
+                curr_val  = p["cmp"] * p["shares"]
+                port_pct  = invested / total_invested * 100 if total_invested > 0 else 0
 
                 st.markdown(f"""
                 <div style="background:#13131f;border:1px solid {'#f87171' if p['near_sl'] else '#34d399' if p['hit_40'] else '#2a2a3d'};
@@ -1161,21 +1194,25 @@ elif page == "💼 My Positions":
                     <div>
                       <div style="font-size:18px;font-weight:700">{p['symbol']}</div>
                       <div style="font-size:11px;color:#888">{p['entry_date']} · {p['hold_days']} days</div>
+                      <div style="font-size:11px;color:#6b6b85;margin-top:2px">{port_pct:.1f}% of portfolio</div>
                     </div>
                     <div style="text-align:right">
                       <div style="font-size:22px;font-weight:700;color:{'#34d399' if p['pnl_pct']>=0 else '#f87171'}">{p['pnl_pct']:+.2f}%</div>
-                      <div style="font-size:12px;color:{'#34d399' if p['pnl_rs']>=0 else '#f87171'}">₹{abs(p['pnl_rs']):,.0f}</div>
+                      <div style="font-size:13px;font-weight:600;color:{'#34d399' if p['pnl_rs']>=0 else '#f87171'}">₹{p['pnl_rs']:+,.0f}</div>
+                      <div style="font-size:11px;color:#888">of ₹{invested:,.0f}</div>
                     </div>
                   </div>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
                     <div><span style="color:#888;font-size:11px">CMP</span><br><b>₹{p['cmp']:,.2f}</b></div>
                     <div><span style="color:#888;font-size:11px">Entry</span><br><b>₹{p['entry_price']:,.2f}</b></div>
-                    <div><span style="color:#888;font-size:11px">EMA 220</span><br><b>₹{p['ema220']:,.2f}</b></div>
+                    <div><span style="color:#888;font-size:11px">Current Value</span><br><b>₹{curr_val:,.0f}</b></div>
                     <div><span style="color:#888;font-size:11px">Shares</span><br><b>{p['shares']}</b></div>
+                    <div><span style="color:#888;font-size:11px">EMA 220</span><br><b>₹{p['ema220']:,.2f}</b></div>
                     <div><span style="color:#888;font-size:11px">Trailing SL</span><br><b style="color:#f87171">₹{p['trailing_sl']:,.2f}</b></div>
                     <div><span style="color:#888;font-size:11px">Updated SL</span><br><b style="color:{'#34d399' if p['sl_updated'] else '#e0e0f0'}">₹{p['new_sl']:,.2f} {'↑' if p['sl_updated'] else ''}</b></div>
                     <div><span style="color:#888;font-size:11px">+40% Target</span><br><b style="color:{'#34d399' if p['hit_40'] else '#e0e0f0'}">₹{p['target_40']:,.2f} {'✓' if p['hit_40'] else ''}</b></div>
                     <div><span style="color:#888;font-size:11px">+100% Target</span><br><b style="color:{'#34d399' if p['hit_100'] else '#e0e0f0'}">₹{p['target_100']:,.2f} {'✓' if p['hit_100'] else ''}</b></div>
+                    <div><span style="color:#888;font-size:11px">Days Held</span><br><b>{p['hold_days']}</b></div>
                   </div>
                   <div style="margin-top:10px">
                     <div style="font-size:10px;color:#888;margin-bottom:3px">Distance from SL</div>
@@ -1186,22 +1223,13 @@ elif page == "💼 My Positions":
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Update SL / Remove buttons
                 bc1, bc2 = st.columns(2)
                 with bc1:
                     if st.button(f"Update SL", key=f"sl_{p['symbol']}"):
-                        for pos in st.session_state["positions"]:
-                            if pos["symbol"] == p["symbol"]:
-                                pos["trailing_sl"] = p["new_sl"]
-                        st.success(f"SL updated to ₹{p['new_sl']}")
-                        st.rerun()
+                        st.info(f"Update SL for {p['symbol']} to ₹{p['new_sl']} in Google Sheet → Trailing SL column")
                 with bc2:
                     if st.button(f"Exit", key=f"ex_{p['symbol']}", type="secondary"):
-                        st.session_state["positions"] = [
-                            pos for pos in st.session_state["positions"]
-                            if pos["symbol"] != p["symbol"]
-                        ]
-                        st.rerun()
+                        st.info(f"To exit {p['symbol']}: Delete from Positions tab and add to Closed Trades tab in Google Sheet")
 
         # ── Chart for selected position ──
         st.markdown("---")
