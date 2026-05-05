@@ -1147,36 +1147,39 @@ elif page == "💼 My Positions":
 
         # ── Position cards ──
 
-        # ── Holdings Summary Table ──
-        st.markdown("#### 📋 Holdings — Individual P&L")
+        # ── Zerodha-style Holdings ──
+        st.markdown("#### 📋 Holdings")
         total_invested = sum(p["entry_price"]*p["shares"] for p in live)
-        table_rows = []
-        for p in live:
-            invested   = p["entry_price"] * p["shares"]
-            curr_val   = p["cmp"] * p["shares"]
-            port_pct   = invested / total_invested * 100 if total_invested > 0 else 0
-            table_rows.append({
-                "Stock"          : p["symbol"],
-                "Entry ₹"        : f"₹{p['entry_price']:,.2f}",
-                "CMP ₹"          : f"₹{p['cmp']:,.2f}",
-                "Shares"         : p["shares"],
-                "Invested ₹"     : f"₹{invested:,.0f}",
-                "Current Val ₹"  : f"₹{curr_val:,.0f}",
-                "P&L ₹"          : f"₹{p['pnl_rs']:+,.0f}",
-                "P&L %"          : f"{p['pnl_pct']:+.2f}%",
-                "% of Portfolio" : f"{port_pct:.1f}%",
-                "Trailing SL ₹"  : f"₹{p['trailing_sl']:,.2f}",
-                "Updated SL ₹"   : f"₹{p['new_sl']:,.2f}" + (" ↑" if p["sl_updated"] else ""),
-                "Days Held"      : p["hold_days"],
-            })
-        st.dataframe(
-            table_rows,
-            use_container_width=True,
-            height=min(400, 50 + len(table_rows)*35),
-        )
+        holdings_html = ['<div style="background:#13131f;border:1px solid #2a2a3d;border-radius:10px;overflow:hidden;margin-bottom:20px">']
+        for idx2, p in enumerate(live):
+            invested  = p["entry_price"] * p["shares"]
+            pnl_color = "#34d399" if p["pnl_pct"] >= 0 else "#f87171"
+            chg_color = "#34d399" if p.get("change_pct",0) >= 0 else "#f87171"
+            pnl_sign  = "+" if p["pnl_pct"] >= 0 else ""
+            chg_sign  = "+" if p.get("change_pct",0) >= 0 else ""
+            border    = "border-bottom:1px solid #2a2a3d;" if idx2 < len(live)-1 else ""
+            row = (
+                f'<div style="padding:14px 16px;{border}">'
+                f'<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
+                f'<div style="font-size:12px;color:#888">Qty {p["shares"]} &nbsp;&middot;&nbsp; Avg &#8377;{p["entry_price"]:,.2f}</div>'
+                f'<div style="font-size:13px;font-weight:600;color:{pnl_color}">{pnl_sign}{p["pnl_pct"]:.2f}%</div>'
+                f'</div>'
+                f'<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
+                f'<div style="font-size:17px;font-weight:700;color:#e0e0f0">{p["symbol"]}</div>'
+                f'<div style="font-size:17px;font-weight:700;color:{pnl_color}">{pnl_sign}&#8377;{abs(p["pnl_rs"]):,.2f}</div>'
+                f'</div>'
+                f'<div style="display:flex;justify-content:space-between">'
+                f'<div style="font-size:12px;color:#888">Invested &#8377;{invested:,.2f}</div>'
+                f'<div style="font-size:12px;color:#888">LTP &#8377;{p["cmp"]:,.2f} <span style="color:{chg_color}">({chg_sign}{p.get("change_pct",0):.2f}%)</span></div>'
+                f'</div>'
+                f'</div>'
+            )
+            holdings_html.append(row)
+        holdings_html.append('</div>')
+        st.markdown("".join(holdings_html), unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("#### 📊 Position Cards")
+        st.markdown("#### 📊 Position Details")
         cols = st.columns(min(len(live), 3))
         for i, p in enumerate(live):
             with cols[i % 3]:
