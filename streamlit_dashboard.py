@@ -11,6 +11,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime, os, json
 
+# ── Google Sheet Config ──────────────────────────────────────────────────────
+SHEET_ID       = "1tT9NLUcpVqsVN7dFJ2O2v4I4lDwxZcHPAUStQff16OY"
+POSITIONS_URL  = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Positions"
+CLOSED_URL     = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Closed"
+SHEET_EDIT_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="220 EMA Strategy",
@@ -194,6 +200,72 @@ def compute_rs_score(stock_df, bench_df):
         return round((rs63 + rs126) / 2, 2)
     except:
         return None
+
+# ── Google Sheet Functions ───────────────────────────────────────────────────
+
+@st.cache_data(ttl=60)  # refresh every 60 seconds
+def read_positions_from_sheet():
+    """Read open positions from Google Sheet."""
+    try:
+        df = pd.read_csv(POSITIONS_URL)
+        df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
+        positions = []
+        for _, row in df.iterrows():
+            if pd.isna(row.get("symbol","")) or str(row.get("symbol","")).strip() == "":
+                continue
+            positions.append({
+                "symbol"      : str(row["symbol"]).strip().upper(),
+                "entry_price" : float(row.get("entry_price", 0)),
+                "shares"      : int(row.get("shares", 0)),
+                "entry_date"  : str(row.get("entry_date","")).strip(),
+                "trailing_sl" : float(row.get("trailing_sl", 0)),
+            })
+        return positions
+    except Exception as e:
+        st.warning(f"Could not read positions from Google Sheet: {e}")
+        return []
+
+@st.cache_data(ttl=60)
+def read_closed_from_sheet():
+    """Read closed trades from Google Sheet."""
+    try:
+        df = pd.read_csv(CLOSED_URL)
+        df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
+        trades = []
+        for _, row in df.iterrows():
+            if pd.isna(row.get("symbol","")) or str(row.get("symbol","")).strip() == "":
+                continue
+            ep   = float(row.get("entry_price", 0))
+            xp   = float(row.get("exit_price",  0))
+            sh   = int(row.get("shares", 0))
+            pnl  = round((xp - ep) * sh * 0.995, 2)
+            pct  = round((xp - ep) / ep * 100, 2) if ep > 0 else 0
+            try:
+                edt  = pd.to_datetime(str(row.get("entry_date",""))).date()
+                xdt  = pd.to_datetime(str(row.get("exit_date",""))).date()
+                hold = (xdt - edt).days
+            except:
+                hold = 0
+            trades.append({
+                "symbol"      : str(row["symbol"]).strip().upper(),
+                "entry_price" : ep,
+                "exit_price"  : xp,
+                "shares"      : sh,
+                "entry_date"  : str(row.get("entry_date","")),
+                "exit_date"   : str(row.get("exit_date","")),
+                "pnl_rs"      : pnl,
+                "pnl_pct"     : pct,
+                "hold_days"   : hold,
+                "reason"      : str(row.get("reason","Manual Exit")),
+            })
+        return trades
+    except Exception as e:
+        st.warning(f"Could not read closed trades from Google Sheet: {e}")
+        return []
+
+def get_sheet_link():
+    """Return clickable Google Sheet link."""
+    return SHEET_EDIT_URL
 
 def get_signal_state(df):
     """
@@ -718,8 +790,15 @@ elif page == "💼 My Positions":
     st.markdown("## My Open Positions")
 
     # ── Load/save positions from session state ──
-    if "positions" not in st.session_state:
-        st.session_state["positions"] = []
+    # ── Load from Google Sheet (persists across refresh & devices) ──
+    positions     = read_positions_from_sheet()
+    closed_trades = read_closed_from_sheet()
+
+    # Keep in session state for compatibility
+    st.session_state["positions"]     = positions
+    st.session_state["closed_trades"] = closed_trades
+
+
 
     # ── Add position form ──
     # ── Realised P&L Section ──
@@ -729,7 +808,7 @@ elif page == "💼 My Positions":
     if "closed_trades" not in st.session_state:
         st.session_state["closed_trades"] = []
 
-    closed = st.session_state["closed_trades"]
+    closed = closed_trades  # loaded from Google Sheet
 
     # Add closed trade form
     with st.expander("➕ Log a Closed Trade"):
@@ -923,7 +1002,7 @@ elif page == "💼 My Positions":
         # ── Fetch live data for all positions ──
         live = []
         with st.spinner("Fetching live prices..."):
-            for pos in positions:
+            for pos in positions:  # positions loaded from Google Sheet
                 df_raw = fetch_data(f"{pos['symbol']}.NS")
                 if df_raw is None: continue
                 df = add_indicators(df_raw)
@@ -971,7 +1050,17 @@ elif page == "💼 My Positions":
 
         st.markdown("---")
 
-        # ── Portfolio Charts ──
+        # ── Google Sheet Link ──
+    st.markdown(
+        f'📊 **Data source:** [Open Google Sheet]({get_sheet_link()}) '
+        f'← Add/edit positions directly here. Dashboard auto-refreshes every 60 seconds.',
+        unsafe_allow_html=False
+    )
+    if st.button("🔄 Reload from Sheet", use_container_width=False):
+        st.cache_data.clear()
+        st.rerun()
+
+    # ── Portfolio Charts ──
         chart_col1, chart_col2 = st.columns(2)
 
         with chart_col1:
