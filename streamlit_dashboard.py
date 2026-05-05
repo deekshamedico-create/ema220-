@@ -1177,6 +1177,10 @@ elif page == "💼 My Positions":
 
         st.markdown("---")
         st.markdown("#### 📊 Position Cards")
+        st.markdown("#### 📋 Holdings — Individual P&L")
+        total_invested = sum(p["entry_price"]*p["shares"] for p in live)
+        st.dataframe([{"Stock":p["symbol"],"CMP":p["cmp"],"Entry":p["entry_price"],"Shares":p["shares"],"Invested":round(p["entry_price"]*p["shares"]),"Current Val":round(p["cmp"]*p["shares"]),"P&L ₹":round(p["pnl_rs"]),"P&L %":f"{p['pnl_pct']:+.2f}%","% Portfolio":f"{p['entry_price']*p['shares']/total_invested*100:.1f}%","SL":p["trailing_sl"],"Days":p["hold_days"]} for p in live], use_container_width=True)
+        st.markdown("---")
         cols = st.columns(min(len(live), 3))
         for i, p in enumerate(live):
             with cols[i % 3]:
