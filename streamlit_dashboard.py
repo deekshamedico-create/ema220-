@@ -863,7 +863,8 @@ elif page == "💼 My Positions":
         st.markdown("---")
 
         # ── Unrealised vs Realised comparison ──
-        total_unrealised = sum(p["pnl_rs"] for p in live) if live else 0
+        _live_data = st.session_state.get("_live_cache", [])
+        total_unrealised = sum(p["pnl_rs"] for p in _live_data) if _live_data else 0
         uc1, uc2, uc3 = st.columns(3)
         uc1.metric("Unrealised P&L (open)",  f"₹{total_unrealised:+,.0f}",
                    f"{total_unrealised/(total_inv)*100:+.2f}%" if total_inv > 0 else "")
@@ -1021,6 +1022,8 @@ elif page == "💼 My Positions":
                              "hold_days":days})
 
         # ── Alerts ──
+        # Cache live data for use in closed trades section
+        st.session_state["_live_cache"] = live
         alerts = []
         for p in live:
             if p["near_sl"]:  alerts.append(("⚠️","warn",  f"{p['symbol']} — Price ₹{p['cmp']} is within 5% of SL ₹{p['trailing_sl']}"))
