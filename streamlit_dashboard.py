@@ -1051,7 +1051,7 @@ elif page == "💼 My Positions":
         c2.metric("Current Value",  f"\u20b9{total_cur:,.0f}")
         c3.metric("Total P&L",      f"\u20b9{total_pnl:+,.0f}", f"{total_pct:+.2f}%")
         c4.metric("Open Positions", f"{len(live)} / 8")
-        c5.metric("Free Capital",   f"\u20b9{max(0, 300000-total_inv):,.0f}")
+        c5.metric("Free Capital",   f"\u20b9{max(0, 500000-total_inv):,.0f}")
         c6.metric("Best Performer", max(live, key=lambda x:x["pnl_pct"])["symbol"] if live else "\u2014",
                   f"{max(live, key=lambda x:x['pnl_pct'])['pnl_pct']:+.2f}%" if live else "")
 
@@ -1256,6 +1256,103 @@ elif page == "💼 My Positions":
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 4 — NIFTY 500 BENCHMARK
 # ══════════════════════════════════════════════════════════════════════════════
+elif page == "📁 Portfolio":
+    st.markdown("## 📁 Portfolio")
+
+    positions  = read_positions_from_sheet()
+    if not positions:
+        st.info("No positions found. Add trades to your Google Sheet.")
+    else:
+        live2 = []
+        with st.spinner("Fetching prices..."):
+            for pos in positions:
+                sym = pos.get("symbol","").upper()
+                df_raw = fetch_data(f"{sym}.NS")
+                if df_raw is None: continue
+                df_ind = add_indicators(df_raw)
+                row = df_ind.iloc[-1]; prev = df_ind.iloc[-2]
+                cmp = float(row["Close"]); ema = float(row["EMA220"])
+                ep  = float(pos.get("entry_price", cmp))
+                sh  = int(pos.get("shares", 0))
+                sl  = float(pos.get("trailing_sl", max(ema, ep*0.90)))
+                pct = (cmp - ep) / ep * 100
+                chg = (cmp - float(prev["Close"])) / float(prev["Close"]) * 100
+                live2.append({
+                    "symbol"      : sym,
+                    "entry_price" : ep,
+                    "shares"      : sh,
+                    "cmp"         : round(cmp, 2),
+                    "pnl_pct"     : round(pct, 2),
+                    "pnl_rs"      : round((cmp - ep) * sh, 2),
+                    "change_pct"  : round(chg, 2),
+                    "trailing_sl" : round(sl, 2),
+                    "new_sl"      : round(max(ema, cmp*0.90), 2),
+                    "sl_updated"  : max(ema, cmp*0.90) > sl,
+                })
+
+        if not live2:
+            st.error("Could not fetch prices.")
+        else:
+            # ── Summary bar ──
+            total_inv2 = sum(p["entry_price"]*p["shares"] for p in live2)
+            total_cur2 = sum(p["cmp"]*p["shares"] for p in live2)
+            total_pnl2 = total_cur2 - total_inv2
+            total_pct2 = total_pnl2/total_inv2*100 if total_inv2>0 else 0
+            day_pnl2   = sum(p["change_pct"]/100 * p["cmp"] * p["shares"] for p in live2)
+
+            pc1,pc2,pc3,pc4 = st.columns(4)
+            pc1.metric("Invested",     f"₹{total_inv2:,.2f}")
+            pc2.metric("Current",      f"₹{total_cur2:,.2f}", f"{total_pct2:+.2f}%")
+            pc3.metric("Total P&L",    f"₹{total_pnl2:+,.2f}")
+            pc4.metric("Day's P&L",    f"₹{day_pnl2:+,.2f}")
+
+            st.markdown("---")
+
+            # ── Zerodha-style holdings list ──
+            html = ['<div style="background:#13131f;border:1px solid #2a2a3d;border-radius:12px;overflow:hidden">']
+            for i, p in enumerate(sorted(live2, key=lambda x: x["pnl_pct"], reverse=True)):
+                invested   = p["entry_price"] * p["shares"]
+                curr_val   = p["cmp"] * p["shares"]
+                pnl_color  = "#34d399" if p["pnl_pct"] >= 0 else "#f87171"
+                chg_color  = "#34d399" if p["change_pct"] >= 0 else "#f87171"
+                pnl_sign   = "+" if p["pnl_pct"] >= 0 else ""
+                chg_sign   = "+" if p["change_pct"] >= 0 else ""
+                border     = "border-bottom:1px solid #2a2a3d;" if i < len(live2)-1 else ""
+                sl_arrow   = " &#8593;" if p["sl_updated"] else ""
+
+                html.append(
+                    f'<div style="padding:14px 18px;{border}">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'
+                    f'<div style="font-size:12px;color:#888">Qty {p["shares"]} &nbsp;&middot;&nbsp; Avg &#8377;{p["entry_price"]:,.2f}</div>'
+                    f'<div style="font-size:13px;font-weight:700;color:{pnl_color}">{pnl_sign}{p["pnl_pct"]:.2f}%</div>'
+                    f'</div>'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'
+                    f'<div style="font-size:18px;font-weight:700;color:#e0e0f0;letter-spacing:-0.02em">{p["symbol"]}</div>'
+                    f'<div style="font-size:18px;font-weight:700;color:{pnl_color}">{pnl_sign}&#8377;{abs(p["pnl_rs"]):,.2f}</div>'
+                    f'</div>'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                    f'<div style="font-size:12px;color:#888">Invested &#8377;{invested:,.2f} &nbsp;&middot;&nbsp; '
+                    f'<span style="color:#f87171">SL &#8377;{p["trailing_sl"]:,.2f}{sl_arrow}</span></div>'
+                    f'<div style="font-size:12px;color:#888">LTP &#8377;{p["cmp"]:,.2f} '
+                    f'<span style="color:{chg_color}">({chg_sign}{p["change_pct"]:.2f}%)</span></div>'
+                    f'</div>'
+                    f'</div>'
+                )
+            html.append('</div>')
+            st.markdown("".join(html), unsafe_allow_html=True)
+
+            # ── Day's P&L footer ──
+            day_color = "#34d399" if day_pnl2 >= 0 else "#f87171"
+            st.markdown(
+                f'<div style="background:#13131f;border:1px solid #2a2a3d;border-radius:8px;'
+                f'padding:12px 18px;margin-top:12px;display:flex;justify-content:space-between">'
+                f'<span style="color:#888;font-size:14px">Days P&L</span>'
+                f'<span style="color:{day_color};font-size:14px;font-weight:700">'
+                f'{"+" if day_pnl2>=0 else ""}&#8377;{abs(day_pnl2):,.2f}</span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
 elif page == "📈 Nifty 500":
     st.markdown("## Market Benchmark")
 
@@ -1387,7 +1484,7 @@ elif page == "🧮 Position Sizer":
         capital = st.number_input(
             "Current Capital (₹)",
             min_value=10000, max_value=10000000,
-            value=300000, step=5000,
+            value=500000, step=5000,
             help="Your total available trading capital right now"
         )
     with c2:
@@ -1441,7 +1538,7 @@ elif page == "🧮 Position Sizer":
     st.markdown("---")
 
     # ── Core Calculations ──
-    risk_pct    = 0.015                                    # 1.5% risk
+    risk_pct    = 0.01                                     # 1% risksk
     risk_amount = capital * risk_pct                       # Rs at risk
     sl_10pct    = entry_price * 0.90                       # 10% below entry below entry
     initial_sl  = round(max(ema220_val, sl_10pct), 2)     # strategy SL
@@ -1506,7 +1603,7 @@ elif page == "🧮 Position Sizer":
             "Item"       : ["Capital", "Risk %", "Risk Amount", "Risk per Share", "Raw Shares", "Final Shares"],
             "Value"      : [
                 f"₹{capital:,.0f}",
-                "1.5%",
+                "1%",
                 f"₹{risk_amount:,.0f}",
                 f"₹{risk_per_sh:,.2f}",
                 f"{shares_raw:.1f}",
@@ -1536,7 +1633,7 @@ elif page == "🧮 Position Sizer":
     m3.metric("% of Capital",    f"{deploy_pct:.1f}%")
     m4.metric("Initial SL",      f"₹{initial_sl:,.2f}")
     m5.metric("Max Loss (₹)",    f"₹{shares * risk_per_sh:,.0f}")
-    m6.metric("Max Loss (%)",    f"{risk_pct*100:.1f}%")
+    m6.metric("Max Loss (%)",    f"{risk_pct*100:.0f}%")
 
     st.markdown("---")
     st.markdown("#### 🎯 Profit Targets")
@@ -1602,7 +1699,7 @@ elif page == "🧮 Position Sizer":
                                        "SL":f"₹{sl_b:,.2f}","Shares":"—","Deploy":"—",
                                        "% Capital":"—","Status":"❌ Price below SL"})
                     continue
-                sh_b     = math.floor((capital*0.015) / rps_b)
+                sh_b     = math.floor((capital*0.01) / rps_b)
                 dep_b    = sh_b * cb
                 if dep_b > capital*0.20:
                     sh_b  = math.floor(capital*0.20 / cb)
