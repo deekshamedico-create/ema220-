@@ -826,646 +826,220 @@ elif page == "🔍 Signal Scanner":
 # PAGE 3 — MY POSITIONS
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "💼 My Positions":
-    st.markdown("## My Open Positions")
-
-    # ── Load/save positions from session state ──
-    # ── Load from Google Sheet (persists across refresh & devices) ──
+    st.markdown("## My Positions")
     positions     = read_positions_from_sheet()
     closed_trades = read_closed_from_sheet()
-
-    # Keep in session state for compatibility
-    st.session_state["positions"]     = positions
-    # closed trades loaded fresh from sheet when needed
-
-
-
-    # ── Add position form ──
-    # ── Realised P&L Section ──
-    st.markdown("---")
-    st.markdown("### 📒 Realised P&L — Closed Trades")
-
-    # All data from Google Sheet — safe references
-    closed      = read_closed_from_sheet()
-    _live_data  = st.session_state.get("_live_cache", [])
-    _total_inv  = sum(p["entry_price"]*p["shares"] for p in _live_data) if _live_data else 0
-
-    # Add closed trade form
-    with st.expander("➕ Log a Closed Trade"):
-        cc1,cc2,cc3,cc4,cc5,cc6 = st.columns(6)
-        with cc1: ct_sym  = st.text_input("Symbol", key="ct_sym", placeholder="BHEL").upper().strip()
-        with cc2: ct_ep   = st.number_input("Entry Price ₹", min_value=0.0, step=0.5, key="ct_ep")
-        with cc3: ct_xp   = st.number_input("Exit Price ₹",  min_value=0.0, step=0.5, key="ct_xp")
-        with cc4: ct_sh   = st.number_input("Shares", min_value=1, step=1, key="ct_sh")
-        with cc5: ct_edt  = st.date_input("Entry Date", key="ct_edt")
-        with cc6: ct_xdt  = st.date_input("Exit Date",  key="ct_xdt")
-        ct_reason = st.selectbox("Exit Reason", ["Trailing SL", "+40% Profit (50%)", "+100% Profit (25%)", "Manual Exit", "End of Backtest"], key="ct_reason")
-        if st.button("Log Trade", type="primary", key="ct_add"):
-            if ct_sym and ct_ep > 0 and ct_xp > 0 and ct_sh > 0:
-                pnl_rs  = round((ct_xp - ct_ep) * ct_sh * (1 - 0.005), 2)  # after 0.5% cost
-                pnl_pct = round((ct_xp - ct_ep) / ct_ep * 100, 2)
-                hold    = (ct_xdt - ct_edt).days
-                st.success(f"✅ {ct_sym} — P&L: ₹{pnl_rs:+,.0f} ({pnl_pct:+.2f}%)")
-                st.info(f"👉 Please add this to your [Google Sheet]({get_sheet_link()}) Closed tab: "
-                        f"{ct_sym} | {ct_ep} | {ct_xp} | {ct_sh} | {ct_edt} | {ct_xdt} | {ct_reason}")
-            else:
-                st.error("Fill all fields")
-
-    if closed:
-        # ── Summary metrics ──
-        total_realised  = sum(t["pnl_rs"] for t in closed)
-        wins            = [t for t in closed if t["pnl_rs"] > 0]
-        losses          = [t for t in closed if t["pnl_rs"] <= 0]
-        win_rate        = len(wins)/len(closed)*100 if closed else 0
-        avg_win         = sum(t["pnl_pct"] for t in wins)/len(wins) if wins else 0
-        avg_loss        = sum(t["pnl_pct"] for t in losses)/len(losses) if losses else 0
-        profit_factor   = sum(t["pnl_rs"] for t in wins)/abs(sum(t["pnl_rs"] for t in losses)) if losses and sum(t["pnl_rs"] for t in losses) != 0 else float("inf")
-
-        rc1,rc2,rc3,rc4,rc5,rc6 = st.columns(6)
-        rc1.metric("Realised P&L",   f"₹{total_realised:+,.0f}")
-        rc2.metric("Total Trades",   len(closed))
-        rc3.metric("Win Rate",       f"{win_rate:.1f}%")
-        rc4.metric("Avg Win",        f"{avg_win:+.1f}%")
-        rc5.metric("Avg Loss",       f"{avg_loss:+.1f}%")
-        rc6.metric("Profit Factor",  f"{profit_factor:.2f}" if profit_factor != float("inf") else "∞")
-
-        st.markdown("---")
-
-        # ── Unrealised vs Realised comparison ──
-        total_unrealised = sum(p["pnl_rs"] for p in _live_data) if _live_data else 0
-        uc1, uc2, uc3 = st.columns(3)
-        uc1.metric("Unrealised P&L (open)",  f"₹{total_unrealised:+,.0f}",
-                   f"{total_unrealised/_total_inv*100:+.2f}%" if _total_inv > 0 else "—")
-        uc2.metric("Realised P&L (closed)",  f"₹{total_realised:+,.0f}")
-        uc3.metric("Total Combined P&L",     f"₹{total_unrealised+total_realised:+,.0f}")
-
-        # ── Realised P&L chart ──
-        rc1_chart, rc2_chart = st.columns(2)
-
-        with rc1_chart:
-            st.markdown("#### Realised P&L per Trade")
-            t_syms   = [f"{t['symbol']} ({t['exit_date'][5:]})" for t in closed]
-            t_pnls   = [t["pnl_rs"] for t in closed]
-            t_colors = ["#34d399" if v >= 0 else "#f87171" for v in t_pnls]
-            fig_real = go.Figure(data=[go.Bar(
-                x=t_syms, y=t_pnls,
-                marker_color=t_colors,
-                text=[f"₹{v:+,.0f}" for v in t_pnls],
-                textposition="outside",
-            )])
-            fig_real.update_layout(
-                paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
-                font=dict(color="#e0e0f0", size=11), height=280,
-                margin=dict(l=10, r=10, t=10, b=60),
-                xaxis=dict(gridcolor="#1a1a2e", tickangle=-30),
-                yaxis=dict(gridcolor="#1a1a2e", title="P&L (₹)"),
-                showlegend=False,
-            )
-            fig_real.add_hline(y=0, line_color="#888", line_dash="dot", opacity=0.5)
-            st.plotly_chart(fig_real, use_container_width=True)
-
-        with rc2_chart:
-            st.markdown("#### Win / Loss Split")
-            fig_wl = go.Figure(data=[go.Pie(
-                labels=["Wins", "Losses"],
-                values=[len(wins), len(losses)],
-                hole=0.5,
-                marker=dict(colors=["#34d399","#f87171"]),
-                textinfo="label+value+percent",
-            )])
-            fig_wl.update_layout(
-                paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
-                font=dict(color="#e0e0f0", size=12),
-                height=280, margin=dict(l=10, r=10, t=10, b=10),
-                showlegend=False,
-            )
-            st.plotly_chart(fig_wl, use_container_width=True)
-
-        # ── Closed trades table ──
-        st.markdown("#### Closed Trades Log")
-        trade_rows = []
-        for t in reversed(closed):  # most recent first
-            trade_rows.append({
-                "Symbol"      : t["symbol"],
-                "Entry Date"  : t["entry_date"],
-                "Exit Date"   : t["exit_date"],
-                "Entry ₹"     : t["entry_price"],
-                "Exit ₹"      : t["exit_price"],
-                "Shares"      : t["shares"],
-                "P&L ₹"       : f"₹{t['pnl_rs']:+,.0f}",
-                "P&L %"       : f"{t['pnl_pct']:+.2f}%",
-                "Hold Days"   : t["hold_days"],
-                "Exit Reason" : t["reason"],
-            })
-        st.dataframe(pd.DataFrame(trade_rows), hide_index=True, use_container_width=True)
-
-        # Delete last trade button
-        st.info("To delete a trade, remove it from the Closed tab in your Google Sheet, then click Reload.")
-    else:
-        st.info("No closed trades yet. Log your first exit above when you sell a position.")
-
-    st.markdown("---")
-
-    # ── Export / Import positions ──
-    with st.expander("📤 Export / Import All Data (sync across devices)"):
-        import json as _json
-        all_data = {
-            "positions"    : st.session_state.get("positions", []),
-            "closed_trades": st.session_state.get("closed_trades", []),
-        }
-        export_json = _json.dumps(all_data, indent=2)
-
-        st.markdown("**Export — copy this and save it:**")
-        st.code(export_json, language="json")
-
-        st.markdown("**Import — paste here:**")
-        imported = st.text_area("Paste data here", height=150,
-                                placeholder='{"positions": [...], "closed_trades": [...]}')
-        if st.button("Import All Data", type="primary"):
-            try:
-                parsed = _json.loads(imported)
-                if isinstance(parsed, dict):
-                    st.session_state["positions"]     = parsed.get("positions", [])
-                    st.session_state["closed_trades"] = parsed.get("closed_trades", [])
-                    st.success(f"✅ Imported {len(st.session_state['positions'])} positions "
-                               f"and {len(st.session_state['closed_trades'])} closed trades!")
-                    st.rerun()
-                elif isinstance(parsed, list):
-                    st.session_state["positions"] = parsed
-                    st.success(f"✅ Imported {len(parsed)} positions!")
-                    st.rerun()
-                else:
-                    st.error("Invalid format")
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-    with st.expander("➕ Add / Update Position", expanded=len(st.session_state["positions"])==0):
-        c1,c2,c3,c4,c5 = st.columns([2,2,1,2,1])
-        with c1: sym  = st.text_input("NSE Symbol", key="add_sym", placeholder="KAYNES").upper().strip()
-        with c2: ep   = st.number_input("Entry Price ₹", min_value=0.0, step=0.5, key="add_ep")
-        with c3: sh   = st.number_input("Shares", min_value=1, step=1, key="add_sh")
-        with c4: dt   = st.date_input("Entry Date", key="add_dt")
-        with c5:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("Add", type="primary", use_container_width=True):
-                if sym and ep > 0 and sh > 0:
-                    existing = [p for p in st.session_state["positions"] if p["symbol"] != sym]
-                    existing.append({
-                        "symbol": sym, "entry_price": float(ep),
-                        "shares": int(sh), "entry_date": str(dt),
-                        "trailing_sl": round(ep * 0.90, 2)
-                    })
-                    st.session_state["positions"] = existing
-                    st.success(f"Added {sym}")
-                    st.rerun()
-                else:
-                    st.error("Fill in all fields.")
-
-    positions = st.session_state["positions"]
-
-    if not positions:
-        st.info("No positions yet. Add your first trade above.")
-    else:
-        # ── Fetch live data for all positions ──
-        live = []
-        with st.spinner("Fetching live prices..."):
-            for pos in positions:  # positions loaded from Google Sheet
-                df_raw = fetch_data(f"{pos['symbol']}.NS")
-                if df_raw is None: continue
-                df = add_indicators(df_raw)
-                row = df.iloc[-1]
-                cmp = float(row["Close"]); ema = float(row["EMA220"])
-                ep  = pos["entry_price"]; sh = pos["shares"]
-                sl  = pos["trailing_sl"]; pct = (cmp-ep)/ep*100
-                nsl = round(max(ema, cmp*0.90), 2)
-                entry_date_str = str(pos["entry_date"]).strip()
-                try:
-                    entry_dt = datetime.datetime.strptime(entry_date_str, "%Y-%m-%d")
-                except:
-                    try:
-                        entry_dt = datetime.datetime.strptime(entry_date_str, "%d/%m/%Y")
-                    except:
-                        entry_dt = datetime.datetime.now()
-                days = (datetime.datetime.now() - entry_dt).days
-                live.append({**pos, "cmp":cmp, "ema220":round(ema,2),
-                             "pnl_pct":round(pct,2), "pnl_rs":round((cmp-ep)*sh,2),
-                             "new_sl":nsl, "sl_updated":nsl>sl,
-                             "near_sl":cmp<sl*1.05, "hit_40":pct>=40, "hit_100":pct>=100,
-                             "target_40":round(ep*1.4,2), "target_100":round(ep*2,2),
-                             "hold_days":days})
-
-        # ── Alerts ──
-        # Cache live data for use in closed trades section
-        st.session_state["_live_cache"] = live
-        alerts = []
-        for p in live:
-            if p["near_sl"]:  alerts.append(("⚠️","warn",  f"{p['symbol']} — Price ₹{p['cmp']} is within 5% of SL ₹{p['trailing_sl']}"))
-            if p["hit_40"]:   alerts.append(("✅","good",  f"{p['symbol']} — Up +{p['pnl_pct']}% · Consider booking 50% at ₹{p['target_40']}"))
-            if p["hit_100"]:  alerts.append(("✅","good",  f"{p['symbol']} — Up +{p['pnl_pct']}% · Consider booking next 25% at ₹{p['target_100']}"))
-            if p["sl_updated"]:alerts.append(("↑","info",  f"{p['symbol']} — SL can be raised from ₹{p['trailing_sl']} → ₹{p['new_sl']}"))
-
-        for icon, kind, msg in alerts:
-            if kind == "warn": st.error(f"{icon} {msg}")
-            elif kind == "good": st.success(f"{icon} {msg}")
-            else: st.info(f"{icon} {msg}")
-
-        # ── Portfolio summary ──
-        total_inv = sum(p["entry_price"]*p["shares"] for p in live)
-        total_cur = sum(p["cmp"]*p["shares"] for p in live)
-        total_pnl = total_cur - total_inv
-        total_pct = total_pnl/total_inv*100 if total_inv > 0 else 0
-
-        c1,c2,c3,c4,c5,c6 = st.columns(6)
-        c1.metric("Invested",       f"\u20b9{total_inv:,.0f}")
-        c2.metric("Current Value",  f"\u20b9{total_cur:,.0f}")
-        c3.metric("Total P&L",      f"\u20b9{total_pnl:+,.0f}", f"{total_pct:+.2f}%")
-        c4.metric("Open Positions", f"{len(live)} / 8")
-        c5.metric("Free Capital",   f"\u20b9{max(0, 500000-total_inv):,.0f}")
-        c6.metric("Best Performer", max(live, key=lambda x:x["pnl_pct"])["symbol"] if live else "\u2014",
-                  f"{max(live, key=lambda x:x['pnl_pct'])['pnl_pct']:+.2f}%" if live else "")
-
-        st.markdown("---")
-
-        # ── Google Sheet Link ──
-    st.markdown(
-        f'📊 **Data source:** [Open Google Sheet]({get_sheet_link()}) '
-        f'← Add/edit positions directly here. Dashboard auto-refreshes every 60 seconds.',
-        unsafe_allow_html=False
-    )
-    if st.button("🔄 Reload from Sheet", use_container_width=False):
+    st.markdown(f'Data source: [Open Google Sheet]({get_sheet_link()})')
+    if st.button("Reload from Sheet"):
         st.cache_data.clear()
         st.rerun()
+    if not positions:
+        st.info("No positions. Add trades to Google Sheet.")
+    else:
+        live = []
+        with st.spinner("Fetching prices..."):
+            for pos in positions:
+                sym = pos.get("symbol","").upper()
+                df_raw = fetch_data(f"{sym}.NS")
+                if df_raw is None: continue
+                df_ind = add_indicators(df_raw)
+                row = df_ind.iloc[-1]; prev = df_ind.iloc[-2]
+                cmp = float(row["Close"]); ema = float(row["EMA220"])
+                ep  = float(pos.get("entry_price", cmp))
+                sh  = int(float(pos.get("shares", 0)))
+                sl  = float(pos.get("trailing_sl", max(ema, ep*0.90)))
+                pct = (cmp - ep) / ep * 100
+                chg = (cmp - float(prev["Close"])) / float(prev["Close"]) * 100
+                nsl = round(max(ema, cmp*0.90), 2)
+                estr = str(pos.get("entry_date","")).strip()
+                try:
+                    edt = datetime.datetime.strptime(estr, "%Y-%m-%d")
+                except:
+                    try: edt = datetime.datetime.strptime(estr, "%d/%m/%Y")
+                    except: edt = datetime.datetime.now()
+                days = (datetime.datetime.now() - edt).days
+                live.append({"symbol":sym,"entry_price":ep,"shares":sh,"entry_date":estr,
+                    "hold_days":days,"cmp":round(cmp,2),"ema220":round(ema,2),
+                    "pnl_pct":round(pct,2),"pnl_rs":round((cmp-ep)*sh,2),
+                    "change_pct":round(chg,2),"trailing_sl":round(sl,2),"new_sl":nsl,
+                    "sl_updated":nsl>sl,"near_sl":cmp<sl*1.05,
+                    "target_40":round(ep*1.4,2),"target_100":round(ep*2.0,2),
+                    "hit_40":pct>=40,"hit_100":pct>=100,"near_40pct":pct>=35})
+        st.session_state["_live_cache"] = live
+        if not live:
+            st.error("Could not fetch prices.")
+        else:
+            total_inv = sum(p["entry_price"]*p["shares"] for p in live)
+            total_cur = sum(p["cmp"]*p["shares"] for p in live)
+            total_pnl = total_cur - total_inv
+            total_pct = total_pnl/total_inv*100 if total_inv>0 else 0
+            day_pnl   = sum(p["change_pct"]/100*p["cmp"]*p["shares"] for p in live)
 
-    # ── Portfolio Charts ──
-        chart_col1, chart_col2 = st.columns(2)
+            s1,s2,s3,s4,s5,s6 = st.columns(6)
+            s1.metric("Invested",      f"Rs.{total_inv:,.0f}")
+            s2.metric("Current Value", f"Rs.{total_cur:,.0f}")
+            s3.metric("Total P&L",     f"Rs.{total_pnl:+,.0f}", f"{total_pct:+.2f}%")
+            s4.metric("Day P&L",       f"Rs.{day_pnl:+,.0f}")
+            s5.metric("Positions",     f"{len(live)} / 8")
+            s6.metric("Best",          max(live,key=lambda x:x["pnl_pct"])["symbol"],
+                      f"{max(live,key=lambda x:x['pnl_pct'])['pnl_pct']:+.2f}%")
 
-        with chart_col1:
-            st.markdown("#### Portfolio Allocation")
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=[p["symbol"] for p in live],
-                values=[round(p["cmp"]*p["shares"], 0) for p in live],
-                hole=0.5,
-                textinfo="label+percent",
-                hovertemplate="<b>%{label}</b><br>Value: \u20b9%{value:,.0f}<br>%{percent}<extra></extra>",
-                marker=dict(colors=["#7c6af7","#34d399","#f87171","#fbbf24",
-                                    "#22d3ee","#a89cff","#6ee7b7","#fca5a5"]),
-            )])
-            fig_pie.update_layout(
-                paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
-                font=dict(color="#e0e0f0", size=12),
-                showlegend=False, height=320,
-                margin=dict(l=10, r=10, t=10, b=10),
-                annotations=[dict(text=f"\u20b9{total_cur:,.0f}",
-                    x=0.5, y=0.5, font_size=14,
-                    font_color="#e0e0f0", showarrow=False)]
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            for p in live:
+                if p["near_sl"]:   st.error(f"WARNING: {p['symbol']} near SL Rs.{p['trailing_sl']}")
+                if p["hit_40"]:    st.success(f"TARGET: {p['symbol']} up +{p['pnl_pct']:.1f}% - consider booking 50%")
+                if p["sl_updated"]:st.info(f"UPDATE SL: {p['symbol']} raise from Rs.{p['trailing_sl']} to Rs.{p['new_sl']}")
 
-        with chart_col2:
-            st.markdown("#### P&L by Stock")
-            pnl_vals = [p["pnl_rs"] for p in live]
-            colors   = ["#34d399" if v >= 0 else "#f87171" for v in pnl_vals]
-            fig_bar  = go.Figure(data=[go.Bar(
-                x=[p["symbol"] for p in live], y=pnl_vals,
-                marker_color=colors,
-                text=[f"\u20b9{v:+,.0f}" for v in pnl_vals],
-                textposition="outside",
-                hovertemplate="<b>%{x}</b><br>P&L: \u20b9%{y:+,.0f}<extra></extra>",
-            )])
-            fig_bar.update_layout(
-                paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
-                font=dict(color="#e0e0f0", size=11), height=320,
-                margin=dict(l=10, r=10, t=10, b=10),
-                xaxis=dict(gridcolor="#1a1a2e"),
-                yaxis=dict(gridcolor="#1a1a2e", title="P&L (\u20b9)"),
-                showlegend=False,
-            )
-            fig_bar.add_hline(y=0, line_color="#888", line_dash="dot", opacity=0.5)
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.markdown("---")
+            st.markdown("#### Holdings Overview")
+            rows = []
+            for p in sorted(live, key=lambda x:x["pnl_pct"], reverse=True):
+                inv = p["entry_price"]*p["shares"]
+                rows.append({"Stock":p["symbol"],"Qty":p["shares"],
+                    "Buy Price":f"Rs.{p['entry_price']:,.2f}",
+                    "CMP":f"Rs.{p['cmp']:,.2f}",
+                    "Invested":f"Rs.{inv:,.0f}",
+                    "Current":f"Rs.{p['cmp']*p['shares']:,.0f}",
+                    "Day %":f"{p['change_pct']:+.2f}%",
+                    "Total P&L":f"Rs.{p['pnl_rs']:+,.0f}",
+                    "Total %":f"{p['pnl_pct']:+.2f}%",
+                    "SL":f"Rs.{p['trailing_sl']:,.0f}",
+                    "Days":p["hold_days"]})
+            st.dataframe(rows, hide_index=True, use_container_width=True)
 
-        # ── Invested vs Current Value comparison ──
-        st.markdown("#### Invested vs Current Value per Stock")
-        fig_comp = go.Figure()
-        fig_comp.add_trace(go.Bar(
-            name="Invested",
-            x=[p["symbol"] for p in live],
-            y=[round(p["entry_price"]*p["shares"], 0) for p in live],
-            marker_color="#3a3a55",
-            hovertemplate="<b>%{x}</b><br>Invested: \u20b9%{y:,.0f}<extra></extra>",
-        ))
-        fig_comp.add_trace(go.Bar(
-            name="Current Value",
-            x=[p["symbol"] for p in live],
-            y=[round(p["cmp"]*p["shares"], 0) for p in live],
-            marker_color=["#34d399" if p["pnl_pct"]>=0 else "#f87171" for p in live],
-            hovertemplate="<b>%{x}</b><br>Current: \u20b9%{y:,.0f}<extra></extra>",
-        ))
-        fig_comp.update_layout(
-            barmode="group",
-            paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
-            font=dict(color="#e0e0f0", size=11), height=300,
-            margin=dict(l=10, r=10, t=10, b=10),
-            xaxis=dict(gridcolor="#1a1a2e"),
-            yaxis=dict(gridcolor="#1a1a2e", title="Value (\u20b9)"),
-            legend=dict(bgcolor="#13131f", bordercolor="#2a2a3d",
-                       font=dict(color="#e0e0f0")),
-        )
-        st.plotly_chart(fig_comp, use_container_width=True)
+            st.markdown("---")
+            st.markdown("#### Individual Holdings")
+            htabs = st.tabs([p["symbol"] for p in live])
+            for htab, p in zip(htabs, live):
+                with htab:
+                    inv      = p["entry_price"]*p["shares"]
+                    curr     = p["cmp"]*p["shares"]
+                    day_p    = p["change_pct"]/100*p["cmp"]*p["shares"]
+                    dist_pct = (p["cmp"]-p["trailing_sl"])/p["cmp"]*100
+                    pnl_c    = "normal" if p["pnl_pct"] >= 0 else "inverse"
+                    chg_c    = "normal" if p["change_pct"] >= 0 else "inverse"
 
-        st.markdown("---")
-
-        # ── Position cards ──
-
-        # ── Zerodha-style Holdings ──
-        st.markdown("#### 📋 Holdings")
-        total_invested = sum(p["entry_price"]*p["shares"] for p in live)
-        holdings_html = ['<div style="background:#13131f;border:1px solid #2a2a3d;border-radius:10px;overflow:hidden;margin-bottom:20px">']
-        for idx2, p in enumerate(live):
-            invested  = p["entry_price"] * p["shares"]
-            pnl_color = "#34d399" if p["pnl_pct"] >= 0 else "#f87171"
-            chg_color = "#34d399" if p.get("change_pct",0) >= 0 else "#f87171"
-            pnl_sign  = "+" if p["pnl_pct"] >= 0 else ""
-            chg_sign  = "+" if p.get("change_pct",0) >= 0 else ""
-            border    = "border-bottom:1px solid #2a2a3d;" if idx2 < len(live)-1 else ""
-            row = (
-                f'<div style="padding:14px 16px;{border}">'
-                f'<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
-                f'<div style="font-size:12px;color:#888">Qty {p["shares"]} &nbsp;&middot;&nbsp; Avg &#8377;{p["entry_price"]:,.2f}</div>'
-                f'<div style="font-size:13px;font-weight:600;color:{pnl_color}">{pnl_sign}{p["pnl_pct"]:.2f}%</div>'
-                f'</div>'
-                f'<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
-                f'<div style="font-size:17px;font-weight:700;color:#e0e0f0">{p["symbol"]}</div>'
-                f'<div style="font-size:17px;font-weight:700;color:{pnl_color}">{pnl_sign}&#8377;{abs(p["pnl_rs"]):,.2f}</div>'
-                f'</div>'
-                f'<div style="display:flex;justify-content:space-between">'
-                f'<div style="font-size:12px;color:#888">Invested &#8377;{invested:,.2f}</div>'
-                f'<div style="font-size:12px;color:#888">LTP &#8377;{p["cmp"]:,.2f} <span style="color:{chg_color}">({chg_sign}{p.get("change_pct",0):.2f}%)</span></div>'
-                f'</div>'
-                f'</div>'
-            )
-            holdings_html.append(row)
-        holdings_html.append('</div>')
-        st.markdown("".join(holdings_html), unsafe_allow_html=True)
-
-        st.markdown("---")
-        st.markdown("#### 📊 Individual Stock Details")
-
-        # ── Per-stock tabs ──
-        tab_names = [p["symbol"] for p in live]
-        if tab_names:
-            stock_tabs = st.tabs(tab_names)
-            for tab, p in zip(stock_tabs, live):
-                with tab:
-                    invested = p["entry_price"] * p["shares"]
-                    curr_val = p["cmp"] * p["shares"]
-                    pnl_color = "#4ade80" if p["pnl_pct"] >= 0 else "#f87171"
-                    bar_pct   = min(100, max(0, (p["cmp"]-p["trailing_sl"])/p["trailing_sl"]*500))
-                    bar_color = "#f87171" if bar_pct < 20 else "#fbbf24" if bar_pct < 50 else "#4ade80"
-
-                    # Row 1 — key metrics
                     m1,m2,m3,m4 = st.columns(4)
-                    m1.metric("CMP", f"₹{p['cmp']:,.2f}",
-                              f"{'+' if p.get('change_pct',0)>=0 else ''}{p.get('change_pct',0):.2f}% today")
-                    m2.metric("P&L", f"₹{p['pnl_rs']:+,.0f}", f"{p['pnl_pct']:+.2f}%")
-                    m3.metric("Invested", f"₹{invested:,.0f}")
-                    m4.metric("Current Value", f"₹{curr_val:,.0f}")
-
-                    # Row 2 — trade details
-                    m5,m6,m7,m8 = st.columns(4)
-                    m5.metric("Entry Price", f"₹{p['entry_price']:,.2f}")
-                    m6.metric("Shares", f"{p['shares']}")
-                    m7.metric("Days Held", f"{p['hold_days']}")
-                    m8.metric("EMA 220", f"₹{p['ema220']:,.2f}")
+                    m1.metric("CMP",         f"Rs.{p['cmp']:,.2f}", f"{p['change_pct']:+.2f}% today")
+                    m2.metric("Buying Price", f"Rs.{p['entry_price']:,.2f}")
+                    m3.metric("Total P&L",   f"Rs.{p['pnl_rs']:+,.0f}", f"{p['pnl_pct']:+.2f}%")
+                    m4.metric("Days Held",   str(p["hold_days"]))
 
                     st.markdown("---")
+                    c1,c2,c3 = st.columns(3)
 
-                    # Row 3 — SL and targets
-                    s1,s2,s3,s4 = st.columns(4)
-                    s1.metric("Trailing SL", f"₹{p['trailing_sl']:,.2f}",
-                              delta="⚠️ Near SL!" if p["near_sl"] else None,
-                              delta_color="inverse")
-                    s2.metric("Updated SL", f"₹{p['new_sl']:,.2f}",
-                              delta="↑ Raise now" if p["sl_updated"] else "No change")
-                    s3.metric("+40% Target", f"₹{p['target_40']:,.2f}",
-                              delta="✓ HIT — Sell 50%" if p["hit_40"] else f"Need +₹{(p['target_40']-p['cmp'])*p['shares']:,.0f}")
-                    s4.metric("+100% Target", f"₹{p['target_100']:,.2f}",
-                              delta="✓ HIT — Sell 25%" if p["hit_100"] else f"Need +₹{(p['target_100']-p['cmp'])*p['shares']:,.0f}")
+                    with c1:
+                        st.markdown("**Position**")
+                        st.metric("Shares",        str(p["shares"]))
+                        st.metric("Invested",      f"Rs.{inv:,.0f}")
+                        st.metric("Current Value", f"Rs.{curr:,.0f}", f"Rs.{p['pnl_rs']:+,.0f}")
 
-                    # SL distance bar
-                    st.markdown(f"""
-                    <div style="margin:10px 0 4px">
-                        <div style="display:flex;justify-content:space-between;font-size:12px;color:#a0a0c0;margin-bottom:4px">
-                            <span>SL ₹{p['trailing_sl']:,.2f}</span>
-                            <span>Distance from SL</span>
-                            <span>CMP ₹{p['cmp']:,.2f}</span>
-                        </div>
-                        <div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;border:1px solid #3a3a5a">
-                            <div style="width:{bar_pct}%;height:100%;background:{bar_color};border-radius:4px;transition:width 0.5s"></div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    with c2:
+                        st.markdown("**P&L**")
+                        st.metric("Today Change",  f"{p['change_pct']:+.2f}%")
+                        st.metric("Today P&L",     f"Rs.{day_p:+,.0f}")
+                        st.metric("Total P&L",     f"Rs.{p['pnl_rs']:+,.0f}", f"{p['pnl_pct']:+.2f}%")
+
+                    with c3:
+                        st.markdown("**Stop Loss**")
+                        st.metric("Trailing SL",   f"Rs.{p['trailing_sl']:,.2f}")
+                        st.metric("Updated SL",    f"Rs.{p['new_sl']:,.2f}", "raise it!" if p["sl_updated"] else "")
+                        st.metric("Distance",      f"{dist_pct:.1f}% above SL")
 
                     st.markdown("---")
+                    t1,t2,t3 = st.columns(3)
+                    t1.metric("+40% target (sell 50%)",  f"Rs.{p['target_40']:,.2f}",
+                        "HIT!" if p["hit_40"] else f"Rs.{(p['target_40']-p['cmp'])*p['shares']:,.0f} away")
+                    t2.metric("+100% target (sell 25%)", f"Rs.{p['target_100']:,.2f}",
+                        "HIT!" if p["hit_100"] else f"Rs.{(p['target_100']-p['cmp'])*p['shares']:,.0f} away")
+                    t3.metric("EMA 220", f"Rs.{p['ema220']:,.2f}",
+                        f"{((p['cmp']/p['ema220'])-1)*100:+.1f}% from EMA")
 
-                    # Mini chart for this stock
-                    df_tab = fetch_data(f"{p['symbol']}.NS")
-                    if df_tab is not None:
-                        df_tab = add_indicators(df_tab)
-                        fig_tab = go.Figure()
-                        last60 = df_tab.tail(60)
-                        # Candles
-                        fig_tab.add_trace(go.Candlestick(
-                            x=last60.index, open=last60["Open"],
-                            high=last60["High"], low=last60["Low"], close=last60["Close"],
-                            name="Price",
-                            increasing_fillcolor="#4ade80", increasing_line_color="#4ade80",
-                            decreasing_fillcolor="#f87171", decreasing_line_color="#f87171",
-                        ))
-                        fig_tab.add_trace(go.Scatter(x=last60.index, y=last60["EMA220"],
-                            name="EMA 220", line=dict(color="#7c6af7", width=2)))
-                        # Entry line
-                        fig_tab.add_hline(y=p["entry_price"], line_dash="dash",
-                            line_color="#fbbf24", annotation_text=f"Entry ₹{p['entry_price']:.2f}",
-                            annotation_font_color="#fbbf24")
-                        # SL line
-                        fig_tab.add_hline(y=p["trailing_sl"], line_dash="dash",
-                            line_color="#f87171", annotation_text=f"SL ₹{p['trailing_sl']:.2f}",
-                            annotation_font_color="#f87171")
-                        fig_tab.update_layout(
-                            paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
-                            font=dict(color="#e0e0f0", size=11),
-                            height=300, margin=dict(l=10,r=10,t=10,b=10),
-                            xaxis=dict(gridcolor="#1a1a2e", rangeslider_visible=False),
-                            yaxis=dict(gridcolor="#1a1a2e"),
-                            showlegend=True,
-                            legend=dict(bgcolor="#13131f", bordercolor="#3a3a5a",
-                                       font=dict(color="#e0e0f0")),
-                        )
-                        st.plotly_chart(fig_tab, use_container_width=True)
+                    if p["sl_updated"]: st.info(f"Update SL to Rs.{p['new_sl']} in Google Sheet")
+                    if p["near_sl"]:    st.error(f"Only {dist_pct:.1f}% above SL - monitor closely!")
+                    if p["hit_40"]:     st.success(f"+40% target hit! Consider selling {p['shares']//2} shares")
 
-                    # Action buttons
-                    bc1, bc2 = st.columns(2)
-                    with bc1:
-                        if st.button(f"Update SL → ₹{p['new_sl']}", key=f"sl_{p['symbol']}",
-                                     type="primary" if p["sl_updated"] else "secondary"):
-                            st.info(f"Update SL for {p['symbol']} to ₹{p['new_sl']} in [Google Sheet]({get_sheet_link()}) → Trailing SL column, then Reload.")
-                    with bc2:
-                        if st.button(f"Exit {p['symbol']}", key=f"ex_{p['symbol']}", type="secondary"):
-                            st.info(f"Delete {p['symbol']} from Positions tab and add to Closed Trades in [Google Sheet]({get_sheet_link()}).")
+            st.markdown("---")
 
-        st.markdown("---")
-        st.markdown("#### 📊 Individual Holdings")
-        tab_names = [p["symbol"] for p in live]
-        htabs = st.tabs(tab_names)
-        for htab, p in zip(htabs, live):
-            with htab:
-                invested  = p["entry_price"] * p["shares"]
-                curr_val  = p["cmp"] * p["shares"]
-                pnl_c     = "#4dffb0" if p["pnl_pct"] >= 0 else "#ff8888"
-                chg_c     = "#4dffb0" if p.get("change_pct",0) >= 0 else "#ff8888"
-                day_pnl   = p.get("change_pct",0)/100 * p["cmp"] * p["shares"]
-                dist_pct  = (p["cmp"] - p["trailing_sl"]) / p["cmp"] * 100
+            cc1,cc2 = st.columns(2)
+            with cc1:
+                st.markdown("#### Allocation")
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=[p["symbol"] for p in live],
+                    values=[round(p["cmp"]*p["shares"],0) for p in live],
+                    hole=0.5, textinfo="label+percent",
+                    marker=dict(colors=["#7c6af7","#34d399","#f87171","#fbbf24","#22d3ee","#a89cff","#6ee7b7","#fca5a5"]))])
+                fig_pie.update_layout(paper_bgcolor="#0d0d14",plot_bgcolor="#0d0d14",
+                    font=dict(color="#e0e0f0"),showlegend=False,height=280,
+                    margin=dict(l=10,r=10,t=10,b=10),
+                    annotations=[dict(text=f"Rs.{total_cur:,.0f}",x=0.5,y=0.5,
+                        font_size=12,font_color="#fff",showarrow=False)])
+                st.plotly_chart(fig_pie, use_container_width=True)
+            with cc2:
+                st.markdown("#### P&L by Stock")
+                pnl_vals = [p["pnl_rs"] for p in live]
+                fig_bar = go.Figure(data=[go.Bar(
+                    x=[p["symbol"] for p in live],y=pnl_vals,
+                    marker_color=["#34d399" if v>=0 else "#f87171" for v in pnl_vals],
+                    text=[f"Rs.{v:+,.0f}" for v in pnl_vals],textposition="outside")])
+                fig_bar.update_layout(paper_bgcolor="#0d0d14",plot_bgcolor="#0d0d14",
+                    font=dict(color="#e0e0f0"),height=280,showlegend=False,
+                    margin=dict(l=10,r=10,t=10,b=10),
+                    xaxis=dict(gridcolor="#1a1a2e"),yaxis=dict(gridcolor="#1a1a2e"))
+                fig_bar.add_hline(y=0,line_color="#888",line_dash="dot")
+                st.plotly_chart(fig_bar, use_container_width=True)
 
-                # Row 1 — top metrics
-                mc1,mc2,mc3,mc4 = st.columns(4)
-                mc1.metric("CMP", f"Rs.{p['cmp']:,.2f}", f"{p.get('change_pct',0):+.2f}% today")
-                mc2.metric("Buying Price", f"Rs.{p['entry_price']:,.2f}")
-                mc3.metric("Total P&L", f"Rs.{p['pnl_rs']:+,.0f}", f"{p['pnl_pct']:+.2f}%")
-                mc4.metric("Days Held", str(p["hold_days"]))
+            st.markdown("---")
+            st.markdown("### Realised P&L")
+            closed = read_closed_from_sheet()
+            _live_data = st.session_state.get("_live_cache",[])
+            _total_inv = sum(p["entry_price"]*p["shares"] for p in _live_data) if _live_data else 0
 
-                st.markdown("---")
+            with st.expander("Log a Closed Trade"):
+                lc1,lc2,lc3,lc4,lc5,lc6 = st.columns(6)
+                with lc1: ct_sym = st.text_input("Symbol",key="ct_sym").upper().strip()
+                with lc2: ct_ep  = st.number_input("Entry Rs.",min_value=0.0,step=0.5,key="ct_ep")
+                with lc3: ct_xp  = st.number_input("Exit Rs.", min_value=0.0,step=0.5,key="ct_xp")
+                with lc4: ct_sh  = st.number_input("Shares",  min_value=1,step=1,key="ct_sh")
+                with lc5: ct_edt = st.date_input("Entry Date",key="ct_edt")
+                with lc6: ct_xdt = st.date_input("Exit Date", key="ct_xdt")
+                ct_reason = st.selectbox("Reason",["Trailing SL","+40% Profit","+100% Profit","Manual Exit"],key="ct_reason")
+                if st.button("Log Trade",type="primary",key="ct_add"):
+                    if ct_sym and ct_ep>0 and ct_xp>0 and ct_sh>0:
+                        pnl = round((ct_xp-ct_ep)*ct_sh*0.995,2)
+                        pct2= round((ct_xp-ct_ep)/ct_ep*100,2)
+                        st.success(f"{ct_sym} P&L: Rs.{pnl:+,.0f} ({pct2:+.2f}%)")
+                        st.info(f"Add to Google Sheet Closed tab: {ct_sym} | {ct_ep} | {ct_xp} | {ct_sh} | {ct_edt} | {ct_xdt} | {ct_reason}")
+                    else: st.error("Fill all fields")
 
-                # Row 2 — three detail cards
-                dc1,dc2,dc3 = st.columns(3)
-                with dc1:
-                    st.markdown(
-                        f"<div style='background:#1e1e30;border:1px solid #4a4a70;border-radius:8px;padding:16px'>"
-                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Shares Held</div>"
-                        f"<div style='font-size:22px;font-weight:700;color:#fff;margin-bottom:12px'>{p['shares']}</div>"
-                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Invested</div>"
-                        f"<div style='font-size:18px;font-weight:700;color:#fff;margin-bottom:12px'>Rs.{invested:,.0f}</div>"
-                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Current Value</div>"
-                        f"<div style='font-size:18px;font-weight:700;color:{pnl_c}'>Rs.{curr_val:,.0f}</div>"
-                        f"</div>", unsafe_allow_html=True)
-                with dc2:
-                    st.markdown(
-                        f"<div style='background:#1e1e30;border:1px solid #4a4a70;border-radius:8px;padding:16px'>"
-                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Today Change</div>"
-                        f"<div style='font-size:22px;font-weight:700;color:{chg_c};margin-bottom:12px'>{p.get('change_pct',0):+.2f}%</div>"
-                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Today P&amp;L</div>"
-                        f"<div style='font-size:18px;font-weight:700;color:{chg_c};margin-bottom:12px'>Rs.{day_pnl:+,.0f}</div>"
-                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Total P&amp;L</div>"
-                        f"<div style='font-size:18px;font-weight:700;color:{pnl_c}'>Rs.{p['pnl_rs']:+,.0f}</div>"
-                        f"</div>", unsafe_allow_html=True)
-                with dc3:
-                    sl_c = "#ff8888" if p["near_sl"] else "#4dffb0" if p["sl_updated"] else "#c8c8e8"
-                    st.markdown(
-                        f"<div style='background:#1e1e30;border:1px solid #4a4a70;border-radius:8px;padding:16px'>"
-                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Trailing SL</div>"
-                        f"<div style='font-size:22px;font-weight:700;color:#ff8888;margin-bottom:12px'>Rs.{p['trailing_sl']:,.2f}</div>"
-                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Updated SL {'UP' if p['sl_updated'] else ''}</div>"
-                        f"<div style='font-size:18px;font-weight:700;color:{sl_c};margin-bottom:12px'>Rs.{p['new_sl']:,.2f}</div>"
-                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Distance from SL</div>"
-                        f"<div style='font-size:18px;font-weight:700;color:#ffd060'>{dist_pct:.1f}%</div>"
-                        f"</div>", unsafe_allow_html=True)
+            if closed:
+                total_realised = sum(t["pnl_rs"] for t in closed)
+                wins   = [t for t in closed if t["pnl_rs"]>0]
+                losses = [t for t in closed if t["pnl_rs"]<=0]
+                wr = len(wins)/len(closed)*100 if closed else 0
+                pf = sum(t["pnl_rs"] for t in wins)/abs(sum(t["pnl_rs"] for t in losses)) if losses and sum(t["pnl_rs"] for t in losses)!=0 else 0
+                rc1,rc2,rc3,rc4,rc5 = st.columns(5)
+                rc1.metric("Realised P&L", f"Rs.{total_realised:+,.0f}")
+                rc2.metric("Trades",       len(closed))
+                rc3.metric("Win Rate",     f"{wr:.0f}%")
+                rc4.metric("Avg Win",      f"{sum(t['pnl_pct'] for t in wins)/len(wins) if wins else 0:+.1f}%")
+                rc5.metric("Profit Factor",f"{pf:.2f}" if pf else "N/A")
+                total_unreal = sum(p["pnl_rs"] for p in _live_data) if _live_data else 0
+                uc1,uc2,uc3 = st.columns(3)
+                uc1.metric("Unrealised", f"Rs.{total_unreal:+,.0f}")
+                uc2.metric("Realised",   f"Rs.{total_realised:+,.0f}")
+                uc3.metric("Combined",   f"Rs.{total_unreal+total_realised:+,.0f}")
+                trows = [{"Symbol":t["symbol"],"Entry Date":t["entry_date"],"Exit Date":t["exit_date"],
+                    "Entry Rs.":t["entry_price"],"Exit Rs.":t["exit_price"],"Shares":t["shares"],
+                    "P&L Rs.":f"Rs.{t['pnl_rs']:+,.0f}","P&L %":f"{t['pnl_pct']:+.2f}%",
+                    "Days":t["hold_days"],"Reason":t["reason"]} for t in reversed(closed)]
+                st.dataframe(trows, hide_index=True, use_container_width=True)
+            else:
+                st.info("No closed trades yet.")
 
-                st.markdown("---")
-
-                # Row 3 — targets
-                tc1,tc2,tc3 = st.columns(3)
-                tc1.metric("+40% Target (sell 50%)", f"Rs.{p['target_40']:,.2f}",
-                    "HIT!" if p["hit_40"] else f"Need Rs.{(p['target_40']-p['cmp'])*p['shares']:,.0f} more")
-                tc2.metric("+100% Target (sell 25%)", f"Rs.{p['target_100']:,.2f}",
-                    "HIT!" if p["hit_100"] else f"Need Rs.{(p['target_100']-p['cmp'])*p['shares']:,.0f} more")
-                tc3.metric("EMA 220", f"Rs.{p['ema220']:,.2f}",
-                    f"Price {((p['cmp']/p['ema220'])-1)*100:+.1f}% from EMA")
-
-                # Alerts
-                if p["sl_updated"]:
-                    st.info(f"Update SL to Rs.{p['new_sl']} in Google Sheet")
-                if p["near_sl"]:
-                    st.error(f"WARNING: Price is only {dist_pct:.1f}% above SL!")
-                if p["hit_40"]:
-                    st.success(f"+40% target hit! Consider selling 50% ({p['shares']//2} shares)")
-
-        
-                # Keep old card view hidden but don't break - just skip
-        if False:
-            cols = st.columns(min(len(live), 3))
-            for i, p in enumerate(live):
-                with cols[i % 3]:
-                    pnl_color = "green" if p["pnl_pct"] >= 0 else "red"
-                bar_pct   = min(100, max(0, (p["cmp"]-p["trailing_sl"])/p["trailing_sl"]*500))
-                bar_color = "#f87171" if bar_pct < 20 else "#fbbf24" if bar_pct < 50 else "#34d399"
-                invested  = p["entry_price"] * p["shares"]
-                curr_val  = p["cmp"] * p["shares"]
-                port_pct  = invested / total_invested * 100 if total_invested > 0 else 0
-
-                st.markdown(f"""
-                <div style="background:#13131f;border:1px solid {'#f87171' if p['near_sl'] else '#34d399' if p['hit_40'] else '#2a2a3d'};
-                     border-radius:10px;padding:16px;margin-bottom:12px">
-                  <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-                    <div>
-                      <div style="font-size:18px;font-weight:700">{p['symbol']}</div>
-                      <div style="font-size:11px;color:#888">{p['entry_date']} · {p['hold_days']} days</div>
-                      <div style="font-size:11px;color:#6b6b85;margin-top:2px">{port_pct:.1f}% of portfolio</div>
-                    </div>
-                    <div style="text-align:right">
-                      <div style="font-size:22px;font-weight:700;color:{'#34d399' if p['pnl_pct']>=0 else '#f87171'}">{p['pnl_pct']:+.2f}%</div>
-                      <div style="font-size:13px;font-weight:600;color:{'#34d399' if p['pnl_rs']>=0 else '#f87171'}">₹{p['pnl_rs']:+,.0f}</div>
-                      <div style="font-size:11px;color:#888">of ₹{invested:,.0f}</div>
-                    </div>
-                  </div>
-                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
-                    <div><span style="color:#888;font-size:11px">CMP</span><br><b>₹{p['cmp']:,.2f}</b></div>
-                    <div><span style="color:#888;font-size:11px">Entry</span><br><b>₹{p['entry_price']:,.2f}</b></div>
-                    <div><span style="color:#888;font-size:11px">Current Value</span><br><b>₹{curr_val:,.0f}</b></div>
-                    <div><span style="color:#888;font-size:11px">Shares</span><br><b>{p['shares']}</b></div>
-                    <div><span style="color:#888;font-size:11px">EMA 220</span><br><b>₹{p['ema220']:,.2f}</b></div>
-                    <div><span style="color:#888;font-size:11px">Trailing SL</span><br><b style="color:#f87171">₹{p['trailing_sl']:,.2f}</b></div>
-                    <div><span style="color:#888;font-size:11px">Updated SL</span><br><b style="color:{'#34d399' if p['sl_updated'] else '#e0e0f0'}">₹{p['new_sl']:,.2f} {'↑' if p['sl_updated'] else ''}</b></div>
-                    <div><span style="color:#888;font-size:11px">+40% Target</span><br><b style="color:{'#34d399' if p['hit_40'] else '#e0e0f0'}">₹{p['target_40']:,.2f} {'✓' if p['hit_40'] else ''}</b></div>
-                    <div><span style="color:#888;font-size:11px">+100% Target</span><br><b style="color:{'#34d399' if p['hit_100'] else '#e0e0f0'}">₹{p['target_100']:,.2f} {'✓' if p['hit_100'] else ''}</b></div>
-                    <div><span style="color:#888;font-size:11px">Days Held</span><br><b>{p['hold_days']}</b></div>
-                  </div>
-                  <div style="margin-top:10px">
-                    <div style="font-size:10px;color:#888;margin-bottom:3px">Distance from SL</div>
-                    <div style="background:#1a1a2e;border-radius:3px;height:4px;overflow:hidden">
-                      <div style="width:{bar_pct}%;height:100%;background:{bar_color};border-radius:3px"></div>
-                    </div>
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                bc1, bc2 = st.columns(2)
-                with bc1:
-                    if st.button(f"Update SL", key=f"sl_{p['symbol']}"):
-                        st.info(f"Update SL for {p['symbol']} to ₹{p['new_sl']} in Google Sheet → Trailing SL column")
-                with bc2:
-                    if st.button(f"Exit", key=f"ex_{p['symbol']}", type="secondary"):
-                        st.info(f"To exit {p['symbol']}: Delete from Positions tab and add to Closed Trades tab in Google Sheet")
-
-        # ── Chart for selected position ──
-        st.markdown("---")
-        pick = st.selectbox("View chart", [p["symbol"] for p in live])
-        if pick:
-            df_raw = fetch_data(f"{pick}.NS","2y")
-            if df_raw is not None:
-                df = add_indicators(df_raw)
-                pos = next(p for p in live if p["symbol"]==pick)
-                fig = build_chart(df, pick, 180)
-                # Add entry price and SL lines
-                fig.add_hline(y=pos["entry_price"], line_dash="dash",
-                              line_color="#fbbf24", annotation_text="Entry",
-                              annotation_font_color="#fbbf24", row=1, col=1)
-                fig.add_hline(y=pos["trailing_sl"], line_dash="dash",
-                              line_color="#f87171", annotation_text="SL",
-                              annotation_font_color="#f87171", row=1, col=1)
-                st.plotly_chart(fig, use_container_width=True)
+            with st.expander("How to Add Positions"):
+                st.markdown(f"All position management in [Google Sheet]({get_sheet_link()}). Add rows in Positions tab. Delete and move to Closed tab when exiting.")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE 4 — NIFTY 500 BENCHMARK
-# ══════════════════════════════════════════════════════════════════════════════
 elif page == "📁 Portfolio":
     st.markdown("## 📁 Portfolio")
 
