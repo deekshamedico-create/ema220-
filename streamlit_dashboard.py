@@ -28,27 +28,55 @@ st.set_page_config(
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .stApp { background-color: #0d0d14; }
-    .metric-card {
-        background: #13131f; border: 1px solid #2a2a3d;
-        border-radius: 10px; padding: 16px; text-align: center;
-    }
-    .metric-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: .05em; }
-    .metric-value { font-size: 26px; font-weight: 700; margin: 4px 0; }
-    .metric-sub   { font-size: 12px; color: #888; }
-    .green { color: #34d399; } .red { color: #f87171; } .amber { color: #fbbf24; }
-    .signal-badge {
-        display: inline-block; padding: 3px 10px; border-radius: 20px;
-        font-size: 12px; font-weight: 700;
-    }
-    .badge-green  { background: #063a1a; color: #34d399; }
-    .badge-amber  { background: #3a2a00; color: #fbbf24; }
-    .badge-teal   { background: #003a40; color: #22d3ee; }
-    .badge-purple { background: #1a1040; color: #a89cff; }
+    /* ── Base ── */
+    .stApp { background-color: #0d0d14; color: #f0f0f0; }
+
+    /* ── High contrast metric cards ── */
     div[data-testid="metric-container"] {
-        background: #13131f; border: 1px solid #2a2a3d;
+        background: #1e1e30; border: 1px solid #4a4a70;
         border-radius: 10px; padding: 12px;
     }
+    div[data-testid="metric-container"] label { color: #c8c8e8 !important; font-size: 13px !important; }
+    div[data-testid="metric-container"] [data-testid="metric-value"] { color: #ffffff !important; font-weight: 700 !important; }
+
+    /* ── Sidebar ── */
+    section[data-testid="stSidebar"] { background-color: #0f0f1e !important; }
+    section[data-testid="stSidebar"] label { color: #e0e0f0 !important; font-size: 14px !important; }
+    section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] span { color: #c0c0d8 !important; }
+    section[data-testid="stSidebar"] .stButton button { background: #2a2a45 !important; color: #ffffff !important; border: 1px solid #5050a0 !important; }
+
+    /* ── Alerts with high contrast ── */
+    div[data-testid="stInfo"]    { background: #0d1f33 !important; border-left: 4px solid #4488ff !important; color: #c8e8ff !important; }
+    div[data-testid="stSuccess"] { background: #0a2018 !important; border-left: 4px solid #34d399 !important; color: #a0ffd8 !important; }
+    div[data-testid="stWarning"] { background: #281800 !important; border-left: 4px solid #fbbf24 !important; color: #ffe8a0 !important; }
+    div[data-testid="stError"]   { background: #280808 !important; border-left: 4px solid #f87171 !important; color: #ffc8c8 !important; }
+
+    /* ── Buttons ── */
+    .stButton button { background: #2a2a45 !important; color: #ffffff !important; border: 1px solid #5050a0 !important; font-weight: 600 !important; }
+    .stButton button:hover { background: #3a3a60 !important; }
+
+    /* ── Inputs ── */
+    .stTextInput input, .stNumberInput input { background: #1a1a2a !important; color: #ffffff !important; border: 1px solid #4a4a70 !important; }
+    .stTextInput label, .stNumberInput label, .stDateInput label, .stSelectbox label { color: #c8c8e8 !important; font-weight: 600 !important; }
+
+    /* ── Dataframe ── */
+    .stDataFrame th { background: #1e1e30 !important; color: #ffffff !important; font-weight: 700 !important; }
+    .stDataFrame td { color: #e8e8f0 !important; }
+
+    /* ── Expanders ── */
+    .streamlit-expanderHeader { color: #e8e8f0 !important; font-weight: 600 !important; background: #1a1a2a !important; }
+
+    /* ── Tabs ── */
+    .stTabs [data-baseweb="tab"] { color: #a0a0c0 !important; font-weight: 600 !important; font-size: 14px !important; }
+    .stTabs [aria-selected="true"] { color: #ffffff !important; }
+
+    /* ── Signal badges ── */
+    .signal-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+    .badge-green  { background: #0a3a1a; color: #4dffb0; border: 1px solid #34d399; }
+    .badge-amber  { background: #3a2800; color: #ffd060; border: 1px solid #fbbf24; }
+    .badge-teal   { background: #003840; color: #40f0ff; border: 1px solid #22d3ee; }
+    .badge-purple { background: #18104a; color: #c0b0ff; border: 1px solid #a89cff; }
+    .green { color: #4dffb0; } .red { color: #ff8888; } .amber { color: #ffd060; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1179,11 +1207,193 @@ elif page == "💼 My Positions":
         st.markdown("".join(holdings_html), unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("#### 📊 Position Details")
-        cols = st.columns(min(len(live), 3))
-        for i, p in enumerate(live):
-            with cols[i % 3]:
-                pnl_color = "green" if p["pnl_pct"] >= 0 else "red"
+        st.markdown("#### 📊 Individual Stock Details")
+
+        # ── Per-stock tabs ──
+        tab_names = [p["symbol"] for p in live]
+        if tab_names:
+            stock_tabs = st.tabs(tab_names)
+            for tab, p in zip(stock_tabs, live):
+                with tab:
+                    invested = p["entry_price"] * p["shares"]
+                    curr_val = p["cmp"] * p["shares"]
+                    pnl_color = "#4ade80" if p["pnl_pct"] >= 0 else "#f87171"
+                    bar_pct   = min(100, max(0, (p["cmp"]-p["trailing_sl"])/p["trailing_sl"]*500))
+                    bar_color = "#f87171" if bar_pct < 20 else "#fbbf24" if bar_pct < 50 else "#4ade80"
+
+                    # Row 1 — key metrics
+                    m1,m2,m3,m4 = st.columns(4)
+                    m1.metric("CMP", f"₹{p['cmp']:,.2f}",
+                              f"{'+' if p.get('change_pct',0)>=0 else ''}{p.get('change_pct',0):.2f}% today")
+                    m2.metric("P&L", f"₹{p['pnl_rs']:+,.0f}", f"{p['pnl_pct']:+.2f}%")
+                    m3.metric("Invested", f"₹{invested:,.0f}")
+                    m4.metric("Current Value", f"₹{curr_val:,.0f}")
+
+                    # Row 2 — trade details
+                    m5,m6,m7,m8 = st.columns(4)
+                    m5.metric("Entry Price", f"₹{p['entry_price']:,.2f}")
+                    m6.metric("Shares", f"{p['shares']}")
+                    m7.metric("Days Held", f"{p['hold_days']}")
+                    m8.metric("EMA 220", f"₹{p['ema220']:,.2f}")
+
+                    st.markdown("---")
+
+                    # Row 3 — SL and targets
+                    s1,s2,s3,s4 = st.columns(4)
+                    s1.metric("Trailing SL", f"₹{p['trailing_sl']:,.2f}",
+                              delta="⚠️ Near SL!" if p["near_sl"] else None,
+                              delta_color="inverse")
+                    s2.metric("Updated SL", f"₹{p['new_sl']:,.2f}",
+                              delta="↑ Raise now" if p["sl_updated"] else "No change")
+                    s3.metric("+40% Target", f"₹{p['target_40']:,.2f}",
+                              delta="✓ HIT — Sell 50%" if p["hit_40"] else f"Need +₹{(p['target_40']-p['cmp'])*p['shares']:,.0f}")
+                    s4.metric("+100% Target", f"₹{p['target_100']:,.2f}",
+                              delta="✓ HIT — Sell 25%" if p["hit_100"] else f"Need +₹{(p['target_100']-p['cmp'])*p['shares']:,.0f}")
+
+                    # SL distance bar
+                    st.markdown(f"""
+                    <div style="margin:10px 0 4px">
+                        <div style="display:flex;justify-content:space-between;font-size:12px;color:#a0a0c0;margin-bottom:4px">
+                            <span>SL ₹{p['trailing_sl']:,.2f}</span>
+                            <span>Distance from SL</span>
+                            <span>CMP ₹{p['cmp']:,.2f}</span>
+                        </div>
+                        <div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;border:1px solid #3a3a5a">
+                            <div style="width:{bar_pct}%;height:100%;background:{bar_color};border-radius:4px;transition:width 0.5s"></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    st.markdown("---")
+
+                    # Mini chart for this stock
+                    df_tab = fetch_data(f"{p['symbol']}.NS")
+                    if df_tab is not None:
+                        df_tab = add_indicators(df_tab)
+                        fig_tab = go.Figure()
+                        last60 = df_tab.tail(60)
+                        # Candles
+                        fig_tab.add_trace(go.Candlestick(
+                            x=last60.index, open=last60["Open"],
+                            high=last60["High"], low=last60["Low"], close=last60["Close"],
+                            name="Price",
+                            increasing_fillcolor="#4ade80", increasing_line_color="#4ade80",
+                            decreasing_fillcolor="#f87171", decreasing_line_color="#f87171",
+                        ))
+                        fig_tab.add_trace(go.Scatter(x=last60.index, y=last60["EMA220"],
+                            name="EMA 220", line=dict(color="#7c6af7", width=2)))
+                        # Entry line
+                        fig_tab.add_hline(y=p["entry_price"], line_dash="dash",
+                            line_color="#fbbf24", annotation_text=f"Entry ₹{p['entry_price']:.2f}",
+                            annotation_font_color="#fbbf24")
+                        # SL line
+                        fig_tab.add_hline(y=p["trailing_sl"], line_dash="dash",
+                            line_color="#f87171", annotation_text=f"SL ₹{p['trailing_sl']:.2f}",
+                            annotation_font_color="#f87171")
+                        fig_tab.update_layout(
+                            paper_bgcolor="#0d0d14", plot_bgcolor="#0d0d14",
+                            font=dict(color="#e0e0f0", size=11),
+                            height=300, margin=dict(l=10,r=10,t=10,b=10),
+                            xaxis=dict(gridcolor="#1a1a2e", rangeslider_visible=False),
+                            yaxis=dict(gridcolor="#1a1a2e"),
+                            showlegend=True,
+                            legend=dict(bgcolor="#13131f", bordercolor="#3a3a5a",
+                                       font=dict(color="#e0e0f0")),
+                        )
+                        st.plotly_chart(fig_tab, use_container_width=True)
+
+                    # Action buttons
+                    bc1, bc2 = st.columns(2)
+                    with bc1:
+                        if st.button(f"Update SL → ₹{p['new_sl']}", key=f"sl_{p['symbol']}",
+                                     type="primary" if p["sl_updated"] else "secondary"):
+                            st.info(f"Update SL for {p['symbol']} to ₹{p['new_sl']} in [Google Sheet]({get_sheet_link()}) → Trailing SL column, then Reload.")
+                    with bc2:
+                        if st.button(f"Exit {p['symbol']}", key=f"ex_{p['symbol']}", type="secondary"):
+                            st.info(f"Delete {p['symbol']} from Positions tab and add to Closed Trades in [Google Sheet]({get_sheet_link()}).")
+
+        st.markdown("---")
+        st.markdown("#### 📊 Individual Holdings")
+        tab_names = [p["symbol"] for p in live]
+        htabs = st.tabs(tab_names)
+        for htab, p in zip(htabs, live):
+            with htab:
+                invested  = p["entry_price"] * p["shares"]
+                curr_val  = p["cmp"] * p["shares"]
+                pnl_c     = "#4dffb0" if p["pnl_pct"] >= 0 else "#ff8888"
+                chg_c     = "#4dffb0" if p.get("change_pct",0) >= 0 else "#ff8888"
+                day_pnl   = p.get("change_pct",0)/100 * p["cmp"] * p["shares"]
+                dist_pct  = (p["cmp"] - p["trailing_sl"]) / p["cmp"] * 100
+
+                # Row 1 — top metrics
+                mc1,mc2,mc3,mc4 = st.columns(4)
+                mc1.metric("CMP", f"Rs.{p['cmp']:,.2f}", f"{p.get('change_pct',0):+.2f}% today")
+                mc2.metric("Buying Price", f"Rs.{p['entry_price']:,.2f}")
+                mc3.metric("Total P&L", f"Rs.{p['pnl_rs']:+,.0f}", f"{p['pnl_pct']:+.2f}%")
+                mc4.metric("Days Held", str(p["hold_days"]))
+
+                st.markdown("---")
+
+                # Row 2 — three detail cards
+                dc1,dc2,dc3 = st.columns(3)
+                with dc1:
+                    st.markdown(
+                        f"<div style='background:#1e1e30;border:1px solid #4a4a70;border-radius:8px;padding:16px'>"
+                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Shares Held</div>"
+                        f"<div style='font-size:22px;font-weight:700;color:#fff;margin-bottom:12px'>{p['shares']}</div>"
+                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Invested</div>"
+                        f"<div style='font-size:18px;font-weight:700;color:#fff;margin-bottom:12px'>Rs.{invested:,.0f}</div>"
+                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Current Value</div>"
+                        f"<div style='font-size:18px;font-weight:700;color:{pnl_c}'>Rs.{curr_val:,.0f}</div>"
+                        f"</div>", unsafe_allow_html=True)
+                with dc2:
+                    st.markdown(
+                        f"<div style='background:#1e1e30;border:1px solid #4a4a70;border-radius:8px;padding:16px'>"
+                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Today Change</div>"
+                        f"<div style='font-size:22px;font-weight:700;color:{chg_c};margin-bottom:12px'>{p.get('change_pct',0):+.2f}%</div>"
+                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Today P&amp;L</div>"
+                        f"<div style='font-size:18px;font-weight:700;color:{chg_c};margin-bottom:12px'>Rs.{day_pnl:+,.0f}</div>"
+                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Total P&amp;L</div>"
+                        f"<div style='font-size:18px;font-weight:700;color:{pnl_c}'>Rs.{p['pnl_rs']:+,.0f}</div>"
+                        f"</div>", unsafe_allow_html=True)
+                with dc3:
+                    sl_c = "#ff8888" if p["near_sl"] else "#4dffb0" if p["sl_updated"] else "#c8c8e8"
+                    st.markdown(
+                        f"<div style='background:#1e1e30;border:1px solid #4a4a70;border-radius:8px;padding:16px'>"
+                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Trailing SL</div>"
+                        f"<div style='font-size:22px;font-weight:700;color:#ff8888;margin-bottom:12px'>Rs.{p['trailing_sl']:,.2f}</div>"
+                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Updated SL {'UP' if p['sl_updated'] else ''}</div>"
+                        f"<div style='font-size:18px;font-weight:700;color:{sl_c};margin-bottom:12px'>Rs.{p['new_sl']:,.2f}</div>"
+                        f"<div style='color:#c8c8e8;font-size:11px;text-transform:uppercase;margin-bottom:4px'>Distance from SL</div>"
+                        f"<div style='font-size:18px;font-weight:700;color:#ffd060'>{dist_pct:.1f}%</div>"
+                        f"</div>", unsafe_allow_html=True)
+
+                st.markdown("---")
+
+                # Row 3 — targets
+                tc1,tc2,tc3 = st.columns(3)
+                tc1.metric("+40% Target (sell 50%)", f"Rs.{p['target_40']:,.2f}",
+                    "HIT!" if p["hit_40"] else f"Need Rs.{(p['target_40']-p['cmp'])*p['shares']:,.0f} more")
+                tc2.metric("+100% Target (sell 25%)", f"Rs.{p['target_100']:,.2f}",
+                    "HIT!" if p["hit_100"] else f"Need Rs.{(p['target_100']-p['cmp'])*p['shares']:,.0f} more")
+                tc3.metric("EMA 220", f"Rs.{p['ema220']:,.2f}",
+                    f"Price {((p['cmp']/p['ema220'])-1)*100:+.1f}% from EMA")
+
+                # Alerts
+                if p["sl_updated"]:
+                    st.info(f"Update SL to Rs.{p['new_sl']} in Google Sheet")
+                if p["near_sl"]:
+                    st.error(f"WARNING: Price is only {dist_pct:.1f}% above SL!")
+                if p["hit_40"]:
+                    st.success(f"+40% target hit! Consider selling 50% ({p['shares']//2} shares)")
+
+        
+                # Keep old card view hidden but don't break - just skip
+        if False:
+            cols = st.columns(min(len(live), 3))
+            for i, p in enumerate(live):
+                with cols[i % 3]:
+                    pnl_color = "green" if p["pnl_pct"] >= 0 else "red"
                 bar_pct   = min(100, max(0, (p["cmp"]-p["trailing_sl"])/p["trailing_sl"]*500))
                 bar_color = "#f87171" if bar_pct < 20 else "#fbbf24" if bar_pct < 50 else "#34d399"
                 invested  = p["entry_price"] * p["shares"]
