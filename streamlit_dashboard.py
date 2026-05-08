@@ -780,8 +780,7 @@ elif page == "🔍 Signal Scanner":
                     "SL ₹"              : r["sl_level"],
                     "RSI"               : r["rsi"],
                     "Change %"          : f"{r['change_pct']:+.2f}%",
-                    "EMA Cross Date"    : r.get("cross_date","—"),
-                    "Days since cross"  : r.get("days_since_cross","—"),
+                    "Days above 52W Hi" : r.get("days_since_break","—"),
                 })
             df_results = pd.DataFrame(rows)
             st.dataframe(df_results, hide_index=True, use_container_width=True, height=500)
