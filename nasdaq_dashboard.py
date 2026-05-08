@@ -216,14 +216,25 @@ def get_signal_state(df):
     if days_since_cross <= 1:
         state = "ema_cross"
     elif c > w52_fixed:
-        # Broke 52W high + stayed above EMA 220 every day since cross → CONFIRMED
+        # Find the day 52W high was first broken
         break_idx = None
         for j in range(len(post_cross)):
             if float(post_cross["Close"].iloc[j]) > w52_fixed:
                 break_idx = j
                 break
         days_since_break = (len(post_cross) - 1 - break_idx) if break_idx is not None else 0
-        state = "confirmed"
+
+        # 10-day confirmation: stayed above 52W high AND above EMA 220 every day
+        post_break = post_cross.iloc[break_idx:] if break_idx is not None else post_cross
+        break_ok   = all(
+            float(post_break["Close"].iloc[j]) > float(post_break["EMA220"].iloc[j])
+            for j in range(len(post_break))
+        )
+
+        if days_since_break >= 10 and break_ok:
+            state = "confirmed"   # 10+ days above 52W high, above EMA every day
+        else:
+            state = "breakout"    # fresh breakout, in confirmation window
     elif p52 > -3:
         state = "near_52w"
     else:
@@ -517,6 +528,7 @@ elif page == "🔍 Signal Scanner":
                     "Change %"         : f"{r['change_pct']:+.2f}%",
                     "EMA Cross Date"   : r.get("cross_date","—"),
                     "Days since cross" : r.get("days_since_cross","—"),
+                    "Days above 52W"   : r.get("days_since_break","—"),
                 })
             st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True, height=500)
 
