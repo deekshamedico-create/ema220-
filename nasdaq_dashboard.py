@@ -526,9 +526,7 @@ elif page == "🔍 Signal Scanner":
                     "SL $"             : r["sl_level"],
                     "RSI"              : r["rsi"],
                     "Change %"         : f"{r['change_pct']:+.2f}%",
-                    "EMA Cross Date"   : r.get("cross_date","—"),
-                    "Days since cross" : r.get("days_since_cross","—"),
-                    "Days above 52W"   : r.get("days_since_break","—"),
+                    "Days above 52W Hi": r.get("days_since_break","—"),
                 })
             st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True, height=500)
 
