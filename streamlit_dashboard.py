@@ -365,7 +365,7 @@ def get_signal_state(df):
             "close": round(c,2), "ema220": round(e,2),
             "w52_high": round(float(df["Close"].iloc[-252:].max()),2),
             "pct_from_52w": 0, "pct_above_ema": round((c-e)/e*100,2),
-            "sl_level": round(max(e,c*0.90),2), "vol20": round(vol20),
+            "sl_level": round(max(e,c*0.85),2), "vol20": round(vol20),
             "rsi": round(rsi,1), "change_pct": round(chg,2), "above_ema": c>e,
         }
 
@@ -385,7 +385,7 @@ def get_signal_state(df):
             "close": round(c,2), "ema220": round(e,2),
             "w52_high": round(w52_fixed,2),
             "pct_from_52w": round(p52,2), "pct_above_ema": round((c-e)/e*100,2),
-            "sl_level": round(max(e,c*0.90),2), "vol20": round(vol20),
+            "sl_level": round(max(e,c*0.85),2), "vol20": round(vol20),
             "rsi": round(rsi,1), "change_pct": round(chg,2), "above_ema": c>e,
             "reset_reason": "Broke below EMA 220 after cross",
         }
@@ -432,7 +432,7 @@ def get_signal_state(df):
         "w52_high"        : round(w52_fixed, 2),
         "pct_from_52w"    : round(p52, 2),
         "pct_above_ema"   : round((c-e)/e*100, 2),
-        "sl_level"        : round(max(e, c*0.90), 2),
+        "sl_level"        : round(max(e, c*0.85), 2),
         "vol20"           : round(vol20),
         "rsi"             : round(rsi, 1),
         "change_pct"      : round(chg, 2),
@@ -858,10 +858,10 @@ elif page == "💼 My Positions":
                 cmp = float(row["Close"]); ema = float(row["EMA220"])
                 ep  = float(pos.get("entry_price", cmp))
                 sh  = int(float(pos.get("shares", 0)))
-                sl  = float(pos.get("trailing_sl", max(ema, ep*0.90)))
+                sl  = float(pos.get("trailing_sl", max(ema, ep*0.85)))
                 pct = (cmp - ep) / ep * 100
                 chg = (cmp - float(prev["Close"])) / float(prev["Close"]) * 100
-                nsl = round(max(ema, cmp*0.90), 2)
+                nsl = round(max(ema, cmp*0.85), 2)
                 estr = str(pos.get("entry_date","")).strip()
                 try:
                     edt = datetime.datetime.strptime(estr, "%Y-%m-%d")
@@ -1069,7 +1069,7 @@ elif page == "📁 Portfolio":
                 cmp = float(row["Close"]); ema = float(row["EMA220"])
                 ep  = float(pos.get("entry_price", cmp))
                 sh  = int(pos.get("shares", 0))
-                sl  = float(pos.get("trailing_sl", max(ema, ep*0.90)))
+                sl  = float(pos.get("trailing_sl", max(ema, ep*0.85)))
                 pct = (cmp - ep) / ep * 100
                 chg = (cmp - float(prev["Close"])) / float(prev["Close"]) * 100
                 live2.append({
@@ -1081,8 +1081,8 @@ elif page == "📁 Portfolio":
                     "pnl_rs"      : round((cmp - ep) * sh, 2),
                     "change_pct"  : round(chg, 2),
                     "trailing_sl" : round(sl, 2),
-                    "new_sl"      : round(max(ema, cmp*0.90), 2),
-                    "sl_updated"  : max(ema, cmp*0.90) > sl,
+                    "new_sl"      : round(max(ema, cmp*0.85), 2),
+                    "sl_updated"  : max(ema, cmp*0.85) > sl,
                 })
 
         if not live2:
@@ -1335,8 +1335,8 @@ elif page == "🧮 Position Sizer":
     # ── Core Calculations ──
     risk_pct    = 0.01                                     # 1% risksk
     risk_amount = capital * risk_pct                       # Rs at risk
-    sl_10pct    = entry_price * 0.90                       # 10% below entry below entry
-    initial_sl  = round(max(ema220_val, sl_10pct), 2)     # strategy SL
+    sl_15pct    = entry_price * 0.85                       # 15% below entry below entry
+    initial_sl  = round(max(ema220_val, sl_15pct), 2)     # strategy SL
     risk_per_sh = entry_price - initial_sl                 # risk per share
 
     if risk_per_sh <= 0:
@@ -1384,10 +1384,10 @@ elif page == "🧮 Position Sizer":
     with r1:
         st.markdown("**Step 1 — Stop Loss**")
         sl_data = {
-            "Rule"       : ["10% below entry", "EMA 220 level", "Initial SL (higher of both)"],
-            "Value ₹"    : [f"₹{sl_10pct:,.2f}", f"₹{ema220_val:,.2f}", f"₹{initial_sl:,.2f}"],
-            "Used?"      : ["✓" if sl_10pct >= ema220_val else "—",
-                            "✓" if ema220_val > sl_10pct else "—",
+            "Rule"       : ["15% below entry", "EMA 220 level", "Initial SL (higher of both)"],
+            "Value ₹"    : [f"₹{sl_15pct:,.2f}", f"₹{ema220_val:,.2f}", f"₹{initial_sl:,.2f}"],
+            "Used?"      : ["✓" if sl_15pct >= ema220_val else "—",
+                            "✓" if ema220_val > sl_15pct else "—",
                             "✅"]
         }
         st.dataframe(pd.DataFrame(sl_data), hide_index=True, use_container_width=True)
@@ -1451,7 +1451,7 @@ elif page == "🧮 Position Sizer":
     trail_rows = []
     for mult in levels:
         price     = entry_price * mult
-        trail_sl  = round(price * 0.90, 2)
+        trail_sl  = round(price * 0.85, 2)
         locked_in = round((trail_sl - entry_price) / entry_price * 100, 2)
         trail_rows.append({
             "If Friday Close"   : f"₹{price:,.2f} ({(mult-1)*100:+.0f}%)",
