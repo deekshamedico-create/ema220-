@@ -14,7 +14,7 @@ import datetime, os, json
 # ── Google Sheet Config ──────────────────────────────────────────────────────
 SHEET_ID       = "1tT9NLUcpVqsVN7dFJ2O2v4I4lDwxZcHPAUStQff16OY"
 POSITIONS_URL  = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Positions"
-CLOSED_URL     = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Closed"
+CLOSED_URL     = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Closed%20Trades"
 SHEET_EDIT_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -29,46 +29,94 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* ── Base ── */
-    .stApp { background-color: #0d0d14; color: #f0f0f0; }
+    .stApp { background-color: #0d0d14; color: #ffffff; }
 
-    /* ── High contrast metric cards ── */
+    /* ── All text white by default ── */
+    .stApp p, .stApp span, .stApp div, .stApp label { color: #ffffff; }
+
+    /* ── Metric containers ── */
     div[data-testid="metric-container"] {
         background: #1e1e30; border: 1px solid #4a4a70;
         border-radius: 10px; padding: 12px;
     }
-    div[data-testid="metric-container"] label { color: #c8c8e8 !important; font-size: 13px !important; }
-    div[data-testid="metric-container"] [data-testid="metric-value"] { color: #ffffff !important; font-weight: 700 !important; }
+    div[data-testid="metric-container"] label {
+        color: #ffffff !important; font-size: 13px !important; font-weight: 600 !important;
+    }
+    div[data-testid="metric-container"] [data-testid="metric-value"] {
+        color: #ffffff !important; font-weight: 700 !important; font-size: 24px !important;
+    }
+    div[data-testid="metric-container"] [data-testid="metric-delta"] {
+        font-size: 13px !important; font-weight: 600 !important;
+    }
 
     /* ── Sidebar ── */
     section[data-testid="stSidebar"] { background-color: #0f0f1e !important; }
-    section[data-testid="stSidebar"] label { color: #e0e0f0 !important; font-size: 14px !important; }
-    section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] span { color: #c0c0d8 !important; }
-    section[data-testid="stSidebar"] .stButton button { background: #2a2a45 !important; color: #ffffff !important; border: 1px solid #5050a0 !important; }
+    section[data-testid="stSidebar"] label { color: #ffffff !important; font-size: 14px !important; font-weight: 600 !important; }
+    section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] span { color: #ffffff !important; }
+    section[data-testid="stSidebar"] .stButton button {
+        background: #2a2a45 !important; color: #ffffff !important;
+        border: 1px solid #6060c0 !important; font-weight: 700 !important;
+    }
 
-    /* ── Alerts with high contrast ── */
-    div[data-testid="stInfo"]    { background: #0d1f33 !important; border-left: 4px solid #4488ff !important; color: #c8e8ff !important; }
-    div[data-testid="stSuccess"] { background: #0a2018 !important; border-left: 4px solid #34d399 !important; color: #a0ffd8 !important; }
-    div[data-testid="stWarning"] { background: #281800 !important; border-left: 4px solid #fbbf24 !important; color: #ffe8a0 !important; }
-    div[data-testid="stError"]   { background: #280808 !important; border-left: 4px solid #f87171 !important; color: #ffc8c8 !important; }
+    /* ── Alerts ── */
+    div[data-testid="stInfo"]    { background: #0d1f33 !important; border-left: 4px solid #4488ff !important; color: #ffffff !important; }
+    div[data-testid="stSuccess"] { background: #0a2018 !important; border-left: 4px solid #34d399 !important; color: #ffffff !important; }
+    div[data-testid="stWarning"] { background: #281800 !important; border-left: 4px solid #fbbf24 !important; color: #ffffff !important; }
+    div[data-testid="stError"]   { background: #280808 !important; border-left: 4px solid #f87171 !important; color: #ffffff !important; }
+    div[data-testid="stInfo"] p, div[data-testid="stSuccess"] p,
+    div[data-testid="stWarning"] p, div[data-testid="stError"] p { color: #ffffff !important; }
 
     /* ── Buttons ── */
-    .stButton button { background: #2a2a45 !important; color: #ffffff !important; border: 1px solid #5050a0 !important; font-weight: 600 !important; }
+    .stButton button {
+        background: #2a2a45 !important; color: #ffffff !important;
+        border: 1px solid #6060c0 !important; font-weight: 700 !important;
+        font-size: 14px !important;
+    }
     .stButton button:hover { background: #3a3a60 !important; }
 
     /* ── Inputs ── */
-    .stTextInput input, .stNumberInput input { background: #1a1a2a !important; color: #ffffff !important; border: 1px solid #4a4a70 !important; }
-    .stTextInput label, .stNumberInput label, .stDateInput label, .stSelectbox label { color: #c8c8e8 !important; font-weight: 600 !important; }
+    .stTextInput input, .stNumberInput input, .stDateInput input {
+        background: #1a1a2a !important; color: #ffffff !important;
+        border: 1px solid #4a4a70 !important; font-size: 14px !important;
+    }
+    .stTextInput label, .stNumberInput label, .stDateInput label,
+    .stSelectbox label, .stRadio label, .stToggle label {
+        color: #ffffff !important; font-weight: 700 !important; font-size: 14px !important;
+    }
+    .stSelectbox div { color: #ffffff !important; }
 
     /* ── Dataframe ── */
-    .stDataFrame th { background: #1e1e30 !important; color: #ffffff !important; font-weight: 700 !important; }
-    .stDataFrame td { color: #e8e8f0 !important; }
+    .stDataFrame th {
+        background: #1e1e30 !important; color: #ffffff !important;
+        font-weight: 700 !important; font-size: 13px !important;
+    }
+    .stDataFrame td { color: #ffffff !important; font-size: 13px !important; }
+    .stDataFrame { border: 1px solid #4a4a70 !important; border-radius: 8px !important; }
 
     /* ── Expanders ── */
-    .streamlit-expanderHeader { color: #e8e8f0 !important; font-weight: 600 !important; background: #1a1a2a !important; }
+    .streamlit-expanderHeader {
+        color: #ffffff !important; font-weight: 700 !important;
+        background: #1a1a2a !important; font-size: 14px !important;
+    }
+    .streamlit-expanderContent { background: #13131f !important; }
 
     /* ── Tabs ── */
-    .stTabs [data-baseweb="tab"] { color: #a0a0c0 !important; font-weight: 600 !important; font-size: 14px !important; }
-    .stTabs [aria-selected="true"] { color: #ffffff !important; }
+    .stTabs [data-baseweb="tab"] {
+        color: #ccccee !important; font-weight: 700 !important; font-size: 14px !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #ffffff !important; border-bottom-color: #7c6af7 !important;
+    }
+
+    /* ── Pills ── */
+    .stPills button { color: #ffffff !important; font-weight: 600 !important; }
+    .stPills [aria-selected="true"] { color: #ffffff !important; }
+
+    /* ── Headers and markdown text ── */
+    h1, h2, h3, h4, h5, h6 { color: #ffffff !important; }
+    .stMarkdown p { color: #ffffff !important; }
+    .stMarkdown span { color: #ffffff !important; }
+    caption { color: #ccccee !important; }
 
     /* ── Signal badges ── */
     .signal-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
@@ -76,7 +124,15 @@ st.markdown("""
     .badge-amber  { background: #3a2800; color: #ffd060; border: 1px solid #fbbf24; }
     .badge-teal   { background: #003840; color: #40f0ff; border: 1px solid #22d3ee; }
     .badge-purple { background: #18104a; color: #c0b0ff; border: 1px solid #a89cff; }
-    .green { color: #4dffb0; } .red { color: #ff8888; } .amber { color: #ffd060; }
+    .green { color: #4dffb0 !important; }
+    .red   { color: #ff8888 !important; }
+    .amber { color: #ffd060 !important; }
+
+    /* ── Progress bars ── */
+    .stProgress > div > div { background-color: #7c6af7 !important; }
+
+    /* ── Spinner ── */
+    .stSpinner { color: #ffffff !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -255,52 +311,71 @@ def read_positions_from_sheet():
 
 @st.cache_data(ttl=60)
 def read_closed_from_sheet():
-    """Read closed trades from Google Sheet Closed tab."""
-    try:
-        df = pd.read_csv(CLOSED_URL)
-        df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
+    """Read closed trades from Google Sheet — tries multiple tab name variants."""
+    # Try different possible tab names
+    urls_to_try = [
+        CLOSED_URL,  # Closed Trades (primary)
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Closed",
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=closed_trades",
+    ]
+    df = None
+    for url in urls_to_try:
+        try:
+            df_try = pd.read_csv(url)
+            if df_try is not None and not df_try.empty:
+                cols = [c.strip().lower().replace(" ","_") for c in df_try.columns]
+                if "exit_price" in cols or "exit price" in [c.strip().lower() for c in df_try.columns]:
+                    df = df_try
+                    break
+        except:
+            continue
 
-        # Critical check: if the sheet has exit_price column, it is truly the Closed tab
-        # If not, it means Google returned the wrong sheet (Positions tab fallback)
-        if "exit_price" not in df.columns:
-            return []  # Closed tab is empty or wrong sheet returned
+    if df is None:
+        return []
 
-        trades = []
-        for _, row in df.iterrows():
-            sym = str(row.get("symbol","")).strip().upper()
-            if not sym or sym == "NAN" or sym == "SYMBOL":
-                continue
-            ep   = float(row.get("entry_price", 0))
-            xp   = float(row.get("exit_price",  0))
-            sh   = int(float(row.get("shares", 0)))
+    df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
 
-            # Skip if exit price is 0 or missing — not a valid closed trade
-            if xp == 0 or ep == 0:
-                continue
+    # Must have exit_price column — otherwise it's the wrong tab
+    if "exit_price" not in df.columns:
+        return []
 
-            pnl  = round((xp - ep) * sh * 0.995, 2)
-            pct  = round((xp - ep) / ep * 100, 2) if ep > 0 else 0
-            try:
-                edt  = pd.to_datetime(str(row.get("entry_date","")), dayfirst=True).date()
-                xdt  = pd.to_datetime(str(row.get("exit_date","")),  dayfirst=True).date()
-                hold = (xdt - edt).days
-            except:
-                hold = 0
-            trades.append({
-                "symbol"      : sym,
-                "entry_price" : ep,
-                "exit_price"  : xp,
-                "shares"      : sh,
-                "entry_date"  : str(row.get("entry_date","")),
-                "exit_date"   : str(row.get("exit_date","")),
-                "pnl_rs"      : pnl,
-                "pnl_pct"     : pct,
-                "hold_days"   : hold,
-                "reason"      : str(row.get("reason","Manual Exit")),
-            })
-        return trades
-    except Exception as e:
-        return []  # Empty closed tab — no error needed
+    trades = []
+    for _, row in df.iterrows():
+        sym = str(row.get("symbol","")).strip().upper()
+        if not sym or sym in ("NAN","SYMBOL",""):
+            continue
+        try:
+            ep = float(str(row.get("entry_price",0)).replace(",",""))
+            xp = float(str(row.get("exit_price",0)).replace(",",""))
+            sh = int(float(str(row.get("shares",0)).replace(",","")))
+        except:
+            continue
+
+        if xp == 0 or ep == 0 or sh == 0:
+            continue
+
+        pnl = round((xp - ep) * sh * 0.995, 2)
+        pct = round((xp - ep) / ep * 100, 2) if ep > 0 else 0
+        try:
+            edt  = pd.to_datetime(str(row.get("entry_date","")), dayfirst=True).date()
+            xdt  = pd.to_datetime(str(row.get("exit_date","")),  dayfirst=True).date()
+            hold = (xdt - edt).days
+        except:
+            hold = 0
+
+        trades.append({
+            "symbol"      : sym,
+            "entry_price" : ep,
+            "exit_price"  : xp,
+            "shares"      : sh,
+            "entry_date"  : str(row.get("entry_date","")),
+            "exit_date"   : str(row.get("exit_date","")),
+            "pnl_rs"      : pnl,
+            "pnl_pct"     : pct,
+            "hold_days"   : hold,
+            "reason"      : str(row.get("reason","Manual Exit")),
+        })
+    return trades
 
 def get_sheet_link():
     """Return clickable Google Sheet link."""
@@ -1000,10 +1075,29 @@ elif page == "💼 My Positions":
                 st.plotly_chart(fig_bar, use_container_width=True)
 
             st.markdown("---")
-            st.markdown("### Realised P&L")
-            closed = read_closed_from_sheet()
-            _live_data = st.session_state.get("_live_cache",[])
-            _total_inv = sum(p["entry_price"]*p["shares"] for p in _live_data) if _live_data else 0
+
+            # ── Realised vs Unrealised Summary ──
+            closed      = read_closed_from_sheet()
+            _live_data  = st.session_state.get("_live_cache", [])
+            _total_inv  = sum(p["entry_price"]*p["shares"] for p in _live_data) if _live_data else 0
+            _unreal_pnl = sum(p["pnl_rs"] for p in _live_data) if _live_data else 0
+            _real_pnl   = sum(t["pnl_rs"] for t in closed) if closed else 0
+            _combined   = _unreal_pnl + _real_pnl
+
+            st.markdown("### 📊 P&L Summary")
+            ps1, ps2, ps3 = st.columns(3)
+            ps1.metric("Unrealised P&L (open positions)",
+                f"₹{_unreal_pnl:+,.0f}",
+                f"{_unreal_pnl/_total_inv*100:+.2f}%" if _total_inv > 0 else "")
+            ps2.metric("Realised P&L (closed trades)",
+                f"₹{_real_pnl:+,.0f}",
+                f"{len(closed)} trades" if closed else "No closed trades yet")
+            ps3.metric("Combined Total P&L",
+                f"₹{_combined:+,.0f}",
+                "✅ Profit" if _combined > 0 else "❌ Loss")
+
+            st.markdown("---")
+            st.markdown("### 📒 Realised P&L — Closed Trades")
 
             with st.expander("Log a Closed Trade"):
                 lc1,lc2,lc3,lc4,lc5,lc6 = st.columns(6)
@@ -1118,7 +1212,7 @@ elif page == "📁 Portfolio":
                 html.append(
                     f'<div style="padding:14px 18px;{border}">'
                     f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'
-                    f'<div style="font-size:12px;color:#888">Qty {p["shares"]} &nbsp;&middot;&nbsp; Avg &#8377;{p["entry_price"]:,.2f}</div>'
+                    f'<div style="font-size:12px;color:#cccccc">Qty {p["shares"]} &nbsp;&middot;&nbsp; Avg &#8377;{p["entry_price"]:,.2f}</div>'
                     f'<div style="font-size:13px;font-weight:700;color:{pnl_color}">{pnl_sign}{p["pnl_pct"]:.2f}%</div>'
                     f'</div>'
                     f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'
@@ -1126,9 +1220,9 @@ elif page == "📁 Portfolio":
                     f'<div style="font-size:18px;font-weight:700;color:{pnl_color}">{pnl_sign}&#8377;{abs(p["pnl_rs"]):,.2f}</div>'
                     f'</div>'
                     f'<div style="display:flex;justify-content:space-between;align-items:center">'
-                    f'<div style="font-size:12px;color:#888">Invested &#8377;{invested:,.2f} &nbsp;&middot;&nbsp; '
+                    f'<div style="font-size:12px;color:#cccccc">Invested &#8377;{invested:,.2f} &nbsp;&middot;&nbsp; '
                     f'<span style="color:#f87171">SL &#8377;{p["trailing_sl"]:,.2f}{sl_arrow}</span></div>'
-                    f'<div style="font-size:12px;color:#888">LTP &#8377;{p["cmp"]:,.2f} '
+                    f'<div style="font-size:12px;color:#cccccc">LTP &#8377;{p["cmp"]:,.2f} '
                     f'<span style="color:{chg_color}">({chg_sign}{p["change_pct"]:.2f}%)</span></div>'
                     f'</div>'
                     f'</div>'
@@ -1141,7 +1235,7 @@ elif page == "📁 Portfolio":
             st.markdown(
                 f'<div style="background:#13131f;border:1px solid #2a2a3d;border-radius:8px;'
                 f'padding:12px 18px;margin-top:12px;display:flex;justify-content:space-between">'
-                f'<span style="color:#888;font-size:14px">Days P&L</span>'
+                f'<span style="color:#cccccc;font-size:14px">Days P&L</span>'
                 f'<span style="color:{day_color};font-size:14px;font-weight:700">'
                 f'{"+" if day_pnl2>=0 else ""}&#8377;{abs(day_pnl2):,.2f}</span>'
                 f'</div>',
@@ -1232,7 +1326,7 @@ elif page == "📈 Nifty 500":
                     v500  = f"{r500v:+.2f}%" if r500v else "—"
                 col.markdown(f"""
                 <div style="background:#13131f;border:1px solid #2a2a3d;border-radius:8px;padding:12px;text-align:center">
-                    <div style="font-size:11px;color:#888;text-transform:uppercase;margin-bottom:6px">{label}</div>
+                    <div style="font-size:11px;color:#cccccc;text-transform:uppercase;margin-bottom:6px">{label}</div>
                     <div style="font-size:13px;font-weight:700;color:#a89cff">N50</div>
                     <div style="font-size:16px;font-weight:700;color:{'#34d399' if '+' in v50 else '#f87171'}">{v50}</div>
                     <div style="font-size:13px;font-weight:700;color:#22d3ee;margin-top:6px">N500</div>
