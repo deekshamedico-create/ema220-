@@ -176,39 +176,49 @@ def read_nasdaq_positions():
 
 @st.cache_data(ttl=60)
 def read_nasdaq_closed():
-    urls = [
-        NASDAQ_CLOSED_URL,
-        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Nasdaq%20Closed%20Trades",
+    NASDAQ_CLOSED_ID = "1_I2JEHn272zsVr_sWNmy_W0AmXROEFvtMppaCFS04rI"
+    urls_to_try = [
+        f"https://docs.google.com/spreadsheets/d/{NASDAQ_CLOSED_ID}/gviz/tq?tqx=out:csv&sheet=CLOSED",
+        f"https://docs.google.com/spreadsheets/d/{NASDAQ_CLOSED_ID}/gviz/tq?tqx=out:csv&sheet=Closed",
+        f"https://docs.google.com/spreadsheets/d/{NASDAQ_CLOSED_ID}/gviz/tq?tqx=out:csv&sheet=Sheet2",
+        f"https://docs.google.com/spreadsheets/d/{NASDAQ_CLOSED_ID}/gviz/tq?tqx=out:csv&gid=1",
+        f"https://docs.google.com/spreadsheets/d/{NASDAQ_CLOSED_ID}/pub?output=csv&sheet=Closed",
+        f"https://docs.google.com/spreadsheets/d/{NASDAQ_CLOSED_ID}/pub?output=csv&sheet=CLOSED",
+        f"https://docs.google.com/spreadsheets/d/{NASDAQ_CLOSED_ID}/pub?output=csv&gid=1",
     ]
-    for url in urls:
+    for url in urls_to_try:
         try:
             df = pd.read_csv(url)
+            if df is None or df.empty: continue
             df.columns = [c.strip().lower().replace(" ","_") for c in df.columns]
-            if "exit_price" not in df.columns: continue
+            exit_col = next((c for c in df.columns if "exit" in c and "price" in c), None)
+            if exit_col is None: continue
             trades = []
             for _, row in df.iterrows():
                 sym = str(row.get("symbol","")).strip().upper()
                 if not sym or sym in ("NAN","SYMBOL",""): continue
-                ep = float(str(row.get("entry_price",0)).replace(",",""))
-                xp = float(str(row.get("exit_price",0)).replace(",",""))
-                sh = int(float(str(row.get("shares",0)).replace(",","")))
+                ep_raw = row.get("entry_price", row.get("buy_price", row.get("buy_price",0)))
+                xp_raw = row.get(exit_col, 0)
+                sh_raw = row.get("shares", row.get("qty", 0))
+                try:
+                    ep = float(str(ep_raw).replace(",","").replace("$",""))
+                    xp = float(str(xp_raw).replace(",","").replace("$",""))
+                    sh = float(str(sh_raw).replace(",",""))
+                except: continue
                 if xp==0 or ep==0 or sh==0: continue
                 pnl = round((xp-ep)*sh*0.995, 2)
                 pct = round((xp-ep)/ep*100, 2) if ep>0 else 0
-                try:
-                    edt = pd.to_datetime(str(row.get("entry_date","")), dayfirst=True).date()
-                    xdt = pd.to_datetime(str(row.get("exit_date","")),  dayfirst=True).date()
-                    hold= (xdt-edt).days
-                except: hold=0
+                xdt_raw = row.get("exit_date", row.get("date",""))
+                try: xdt = pd.to_datetime(str(xdt_raw), dayfirst=True).strftime("%d/%m/%Y")
+                except: xdt = str(xdt_raw)
                 trades.append({"symbol":sym,"entry_price":ep,"exit_price":xp,"shares":sh,
-                    "entry_date":str(row.get("entry_date","")),"exit_date":str(row.get("exit_date","")),
-                    "pnl_usd":pnl,"pnl_pct":pct,"hold_days":hold,
-                    "reason":str(row.get("reason","Manual Exit"))})
-            return trades
+                    "exit_date":xdt,"pnl_usd":pnl,"pnl_pct":pct,
+                    "reason":str(row.get("reason", row.get("exit_reason","Manual Exit")))})
+            if trades: return trades
         except: continue
     return []
 
-# ── Signal state ──────────────────────────────────────────────────────────────
+
 def get_signal_state(df):
     if df is None or len(df) < EMA_PERIOD+5: return "none", {}
     row=df.iloc[-1]; prev=df.iloc[-2]
