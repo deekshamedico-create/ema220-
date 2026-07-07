@@ -70,7 +70,9 @@ BENCHMARK = "QQQ"
 
 # ── NYSE/Nasdaq market hours (ET) ─────────────────────────────────────────────
 def get_market_status():
-    now_et        = datetime.datetime.utcnow() - datetime.timedelta(hours=4)  # EDT
+    _tz_utc       = datetime.timezone.utc
+    now_utc       = datetime.datetime.now(_tz_utc)
+    now_et        = (now_utc - datetime.timedelta(hours=4)).replace(tzinfo=None)  # EDT naive
     is_weekend    = now_et.weekday() >= 5
     market_open   = datetime.time(9, 30)
     market_close  = datetime.time(16, 0)
@@ -84,13 +86,14 @@ def fetch_data(symbol, period="2y"):
     cache = f"data_cache_nasdaq/{symbol.replace('.','_').replace('^','_')}.csv"
     now_et, is_weekend, _, _ = get_market_status()
     today            = now_et.date()
+    now_utc_naive    = (datetime.datetime.now(datetime.timezone.utc)).replace(tzinfo=None)
     market_close_utc = datetime.datetime.combine(today, datetime.time(20, 0))  # 4PM ET = 8PM UTC
 
     if os.path.exists(cache):
-        mtime            = datetime.datetime.utcfromtimestamp(os.path.getmtime(cache))
-        cache_age        = (datetime.datetime.utcnow() - mtime).total_seconds()
+        mtime            = datetime.datetime.fromtimestamp(os.path.getmtime(cache), tz=datetime.timezone.utc).replace(tzinfo=None)
+        cache_age        = (now_utc_naive - mtime).total_seconds()
         cache_is_today   = mtime.date() == today
-        cache_post_close = datetime.datetime.utcnow() > market_close_utc
+        cache_post_close = now_utc_naive > market_close_utc
 
         if (cache_is_today and cache_post_close) or (is_weekend and cache_age < 172800):
             try:
@@ -351,11 +354,11 @@ with st.sidebar:
     # FIX: Separate refresh buttons — don't nuke all caches together
     col_r1, col_r2 = st.columns(2)
     with col_r1:
-        if st.button("🔄 Prices", use_container_width=True, help="Re-download price data"):
+        if st.button("🔄 Prices", width="stretch", help="Re-download price data"):
             fetch_data.clear()
             st.rerun()
     with col_r2:
-        if st.button("🗑 Cache", use_container_width=True, help="Clear all cached data"):
+        if st.button("🗑 Cache", width="stretch", help="Clear all cached data"):
             st.cache_data.clear()
             st.rerun()
 
@@ -414,7 +417,7 @@ if page == "📊 Stock Chart":
                 elif kind == "info": st.info(label)
 
                 fig = build_chart(df, symbol, show_days)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
 
                 st.markdown("#### Key Levels")
                 row = df.iloc[-1]
@@ -431,19 +434,19 @@ if page == "📊 Stock Chart":
                                        f"{info['pct_from_52w']:+.2f}%",
                                        f"{(cmp/info['sl_level']-1)*100:+.2f}%"],
                     })
-                    st.dataframe(levels, hide_index=True, use_container_width=True)
+                    st.dataframe(levels, hide_index=True, width="stretch")
                 with col2:
                     targets = pd.DataFrame({
                         "Target"   : ["+20%", "+40% (sell 50%)", "+100% (sell 25%)", "+200%"],
                         "Price ($)": [f"${cmp*1.20:,.2f}", f"${cmp*1.40:,.2f}",
                                       f"${cmp*2.00:,.2f}", f"${cmp*3.00:,.2f}"],
                     })
-                    st.dataframe(targets, hide_index=True, use_container_width=True)
+                    st.dataframe(targets, hide_index=True, width="stretch")
 
                 with st.expander("Recent OHLCV Data"):
                     disp = df[["Open","High","Low","Close","Volume","EMA220","RSI"]].tail(20).round(2).copy()
                     disp.index = disp.index.strftime("%d %b %Y")
-                    st.dataframe(disp, use_container_width=True)
+                    st.dataframe(disp, width="stretch")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -485,7 +488,7 @@ elif page == "🔍 Signal Scanner":
     if is_weekend:    scan_label = "🔍 Run Full Scan (weekend — use with caution)"
     if scan_locked:   scan_label = "🔒 Re-scan (today's results already locked)"
 
-    if st.button(scan_label, type="primary", use_container_width=True):
+    if st.button(scan_label, type="primary", width="stretch"):
         bench_df_raw = fetch_data("QQQ", "2y")
         results = []
         pb    = st.progress(0, text="Scanning Nasdaq 100...")
@@ -567,7 +570,7 @@ elif page == "🔍 Signal Scanner":
                     "Days since cross"    : r.get("days_since_cross", "—"),
                     "Days since 52W break": r.get("days_since_break", "—"),
                 })
-            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True, height=500)
+            st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch", height=500)
 
             st.markdown("#### View chart for a signal stock")
             pick = st.selectbox("Select symbol", [r["Symbol"] for r in filtered])
@@ -575,7 +578,7 @@ elif page == "🔍 Signal Scanner":
                 df_raw = fetch_data(pick, "2y")
                 if df_raw is not None and len(df_raw) >= 2:
                     fig = build_chart(add_indicators(df_raw), pick, 180)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -596,7 +599,7 @@ elif page == "💼 My Positions":
         with c4: dt  = st.date_input("Entry Date",   key="n_dt")
         with c5:
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("Add", type="primary", use_container_width=True, key="n_add"):
+            if st.button("Add", type="primary", width="stretch", key="n_add"):
                 if sym and ep > 0 and sh > 0:
                     existing = [p for p in st.session_state["nasdaq_positions"] if p["symbol"] != sym]
                     existing.append({"symbol": sym, "entry_price": float(ep),
@@ -741,7 +744,7 @@ elif page == "💼 My Positions":
                     fig.add_hline(y=pos["trailing_sl"], line_dash="dash",
                                   line_color="#f87171", annotation_text="SL",
                                   annotation_font_color="#f87171", row=1, col=1)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -776,7 +779,7 @@ elif page == "📈 QQQ Benchmark":
         c4.metric("6 Months", f"{ret(126):+.2f}%" if ret(126) else "—")
         c5.metric("1 Year",   f"{ret(252):+.2f}%" if ret(252) else "—")
         fig = build_chart(df, label, 365)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         periods = [("1 Week",5),("1 Month",21),("3 Months",63),
                    ("6 Months",126),("1 Year",252),("2 Years",504),("5 Years",1260)]
         rows = []
@@ -784,7 +787,7 @@ elif page == "📈 QQQ Benchmark":
             r = ret(n)
             rows.append({"Period": name, "Return": f"{r:+.2f}%" if r else "—",
                          "Direction": "📈" if r and r > 0 else "📉" if r else "—"})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
     if idx_tab == "QQQ (Nasdaq 100)":
         index_section(df_qqq, "QQQ — Nasdaq 100 ETF")
@@ -810,7 +813,7 @@ elif page == "📈 QQQ Benchmark":
             yaxis=dict(gridcolor="#0f1a14", title="Indexed to 100"),
             xaxis=dict(gridcolor="#0f1a14"),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         rows = []
         for label, _, df_raw in dfs:
@@ -824,7 +827,7 @@ elif page == "📈 QQQ Benchmark":
                          "6M": f"{r(126):+.2f}%" if r(126) else "—",
                          "1Y": f"{r(252):+.2f}%" if r(252) else "—",
                          "2Y": f"{r(504):+.2f}%" if r(504) else "—"})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -910,14 +913,14 @@ elif page == "🧮 Position Sizer":
             "Value $": [f"${sl_10pct:,.2f}", f"${ema220_val:,.2f}", f"${initial_sl:,.2f}"],
             "Used?"  : ["✓" if sl_10pct >= ema220_val else "—",
                         "✓" if ema220_val > sl_10pct  else "—", "✅"],
-        }), hide_index=True, use_container_width=True)
+        }), hide_index=True, width="stretch")
     with r2:
         st.markdown("**Shares**")
         st.dataframe(pd.DataFrame({
             "Item" : ["Capital","Risk 1%","Risk Amount","Risk/Share","Shares"],
             "Value": [f"${capital:,.0f}", "1%", f"${risk_amt:,.0f}",
                       f"${risk_per_sh:,.2f}", f"{shares}"],
-        }), hide_index=True, use_container_width=True)
+        }), hide_index=True, width="stretch")
     with r3:
         st.markdown("**Checks**")
         st.dataframe(pd.DataFrame({
@@ -927,7 +930,7 @@ elif page == "🧮 Position Sizer":
             "Status"  : ["✅" if check_min else "❌",
                          "✅" if deploy <= max_deploy else "❌",
                          "✅" if shares > 0 else "❌"],
-        }), hide_index=True, use_container_width=True)
+        }), hide_index=True, width="stretch")
 
     st.markdown("---")
     st.markdown("#### Trade Summary")
@@ -960,7 +963,7 @@ elif page == "🧮 Position Sizer":
             "Locked-in Gain" : f"{locked:+.2f}%",
             "Status"         : "🔒 Profit locked!" if locked > 0 else "📉 At risk",
         })
-    st.dataframe(pd.DataFrame(trail_rows), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(trail_rows), hide_index=True, width="stretch")
 
     st.markdown("---")
     st.markdown("### Batch Calculator")
@@ -997,7 +1000,7 @@ elif page == "🧮 Position Sizer":
                     "Deploy $" : f"${dep_b:,.0f}", "% Capital": f"{dep_b/capital*100:.1f}%",
                     "Status"   : "✅" if dep_b >= 500 else "⚠️ Small",
                 })
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
         b1, b2, b3 = st.columns(3)
         b1.metric("Total Deployed", f"${total_dep:,.0f}")
         b2.metric("% of Capital",   f"{total_dep/capital*100:.1f}%")
