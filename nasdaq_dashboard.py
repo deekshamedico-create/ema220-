@@ -582,86 +582,167 @@ elif page == "🔍 Signal Scanner":
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE 3 — MY POSITIONS
+# PAGE 3 — MY POSITIONS  (Google Sheet backed)
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "💼 My Positions":
     st.markdown("## My Nasdaq Positions")
 
-    if "nasdaq_positions" not in st.session_state:
-        st.session_state["nasdaq_positions"] = []
+    NASDAQ_SHEET_ID   = "1_I2JEHn272zsVr_sWNmy_W0AmXROEFvtMppaCFS04rI"
+    NASDAQ_POS_URL    = f"https://docs.google.com/spreadsheets/d/{NASDAQ_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Positions"
+    NASDAQ_CLOSED_URL = f"https://docs.google.com/spreadsheets/d/{NASDAQ_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Closed"
+    NASDAQ_SHEET_LINK = f"https://docs.google.com/spreadsheets/d/{NASDAQ_SHEET_ID}/edit"
 
-    with st.expander("➕ Add / Update Position",
-                     expanded=len(st.session_state["nasdaq_positions"]) == 0):
-        c1, c2, c3, c4, c5 = st.columns([2, 2, 1, 2, 1])
-        with c1: sym = st.text_input("Symbol",       key="n_sym", placeholder="NVDA").upper().strip()
-        with c2: ep  = st.number_input("Entry Price $", min_value=0.0, step=0.1, key="n_ep")
-        with c3: sh  = st.number_input("Shares",     min_value=1, step=1, key="n_sh")
-        with c4: dt  = st.date_input("Entry Date",   key="n_dt")
-        with c5:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("Add", type="primary", width="stretch", key="n_add"):
-                if sym and ep > 0 and sh > 0:
-                    existing = [p for p in st.session_state["nasdaq_positions"] if p["symbol"] != sym]
-                    existing.append({"symbol": sym, "entry_price": float(ep),
-                                     "shares": int(sh), "entry_date": str(dt),
-                                     "trailing_sl": round(ep * 0.90, 2)})
-                    st.session_state["nasdaq_positions"] = existing
-                    st.success(f"Added {sym}")
-                    st.rerun()
-                else:
-                    st.error("Fill all fields.")
+    @st.cache_data(ttl=60)
+    def read_nasdaq_positions():
+        try:
+            df = pd.read_csv(NASDAQ_POS_URL)
+            df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+            positions = []
+            for _, row in df.iterrows():
+                if pd.isna(row.get("symbol", "")) or str(row.get("symbol", "")).strip() == "":
+                    continue
+                positions.append({
+                    "symbol"      : str(row["symbol"]).strip().upper(),
+                    "entry_price" : float(row.get("entry_price", 0)),
+                    "shares"      : int(float(row.get("shares", 0))),
+                    "entry_date"  : str(row.get("entry_date", "")).strip(),
+                    "trailing_sl" : float(row.get("trailing_sl", 0)),
+                })
+            return positions
+        except Exception as e:
+            st.warning(f"Could not read Nasdaq positions from Google Sheet: {e}")
+            return []
 
-    positions = st.session_state["nasdaq_positions"]
+    @st.cache_data(ttl=60)
+    def read_nasdaq_closed():
+        try:
+            df = pd.read_csv(NASDAQ_CLOSED_URL)
+            df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+            if "exit_price" not in df.columns:
+                return []
+            trades = []
+            for _, row in df.iterrows():
+                sym = str(row.get("symbol", "")).strip().upper()
+                if not sym or sym == "NAN" or sym == "SYMBOL":
+                    continue
+                ep  = float(row.get("entry_price", 0))
+                xp  = float(row.get("exit_price",  0))
+                sh  = int(float(row.get("shares",  0)))
+                if xp == 0 or ep == 0:
+                    continue
+                pnl  = round((xp - ep) * sh * 0.995, 2)
+                pct  = round((xp - ep) / ep * 100, 2) if ep > 0 else 0
+                try:
+                    edt  = pd.to_datetime(str(row.get("entry_date", "")), dayfirst=True).date()
+                    xdt  = pd.to_datetime(str(row.get("exit_date",  "")), dayfirst=True).date()
+                    hold = (xdt - edt).days
+                except Exception:
+                    hold = 0
+                trades.append({
+                    "symbol"      : sym,
+                    "entry_price" : ep,
+                    "exit_price"  : xp,
+                    "shares"      : sh,
+                    "entry_date"  : str(row.get("entry_date", "")),
+                    "exit_date"   : str(row.get("exit_date",  "")),
+                    "pnl_usd"     : pnl,
+                    "pnl_pct"     : pct,
+                    "hold_days"   : hold,
+                    "reason"      : str(row.get("reason", "Manual Exit")),
+                })
+            return trades
+        except Exception as e:
+            st.warning(f"Could not read Nasdaq closed trades from Google Sheet: {e}")
+            return []
+
+    # ── Header ──
+    st.markdown(f'Data source: [Open Google Sheet]({NASDAQ_SHEET_LINK})')
+    col_r1, col_r2 = st.columns([1, 5])
+    with col_r1:
+        if st.button("🔄 Reload Sheet"):
+            read_nasdaq_positions.clear()
+            read_nasdaq_closed.clear()
+            st.rerun()
+
+    positions = read_nasdaq_positions()
+
     if not positions:
-        st.info("No positions yet. Add your first trade above.")
+        st.info("No positions found. Add trades to the Google Sheet → Positions tab.")
+        with st.expander("📋 Expected column format"):
+            st.markdown("""
+            Your **Positions** sheet needs these columns:
+            `symbol | entry_price | shares | entry_date | trailing_sl`
+
+            Your **Closed** sheet needs:
+            `symbol | entry_price | exit_price | shares | entry_date | exit_date | reason`
+            """)
     else:
         live = []
         with st.spinner("Fetching live prices..."):
             for pos in positions:
-                df_raw = fetch_data(pos["symbol"])
-                # FIX: Guard against short/missing data
+                sym    = pos.get("symbol", "").upper()
+                df_raw = fetch_data(sym)
                 if df_raw is None or len(df_raw) < 2:
                     continue
-                df  = add_indicators(df_raw)
-                row = df.iloc[-1]
-                c   = float(row["Close"]); e = float(row["EMA220"])
-                ep  = pos["entry_price"];  sh = pos["shares"]
-                sl  = pos["trailing_sl"];  pct = (c - ep) / ep * 100
-                nsl = round(max(e, c * 0.90), 2)
+                df_ind = add_indicators(df_raw)
+                row    = df_ind.iloc[-1]
+                prev   = df_ind.iloc[-2]
+                cmp    = float(row["Close"]); ema = float(row["EMA220"])
+                ep     = float(pos.get("entry_price", cmp))
+                sh     = int(float(pos.get("shares", 0)))
+                sl     = float(pos.get("trailing_sl", max(ema, ep * 0.90)))
+                pct    = (cmp - ep) / ep * 100
+                chg    = (cmp - float(prev["Close"])) / float(prev["Close"]) * 100
+                nsl    = round(max(ema, cmp * 0.90), 2)
+                estr   = str(pos.get("entry_date", "")).strip()
                 try:
-                    entry_dt = datetime.datetime.strptime(pos["entry_date"], "%Y-%m-%d")
+                    edt = datetime.datetime.strptime(estr, "%Y-%m-%d")
                 except Exception:
-                    entry_dt = datetime.datetime.now()
-                days = (datetime.datetime.now() - entry_dt).days
+                    try:
+                        edt = datetime.datetime.strptime(estr, "%d/%m/%Y")
+                    except Exception:
+                        edt = datetime.datetime.now()
+                days = (datetime.datetime.now() - edt).days
                 live.append({
-                    **pos,
-                    "cmp"       : round(c, 2), "ema220": round(e, 2),
-                    "pnl_pct"   : round(pct, 2), "pnl_usd": round((c - ep) * sh, 2),
-                    "new_sl"    : nsl, "sl_updated": nsl > sl,
-                    "near_sl"   : c < sl * 1.05,
-                    "hit_40"    : pct >= 40, "hit_100": pct >= 100,
-                    "target_40" : round(ep * 1.4, 2), "target_100": round(ep * 2, 2),
-                    "hold_days" : days,
+                    "symbol"      : sym,
+                    "entry_price" : ep,
+                    "shares"      : sh,
+                    "entry_date"  : estr,
+                    "hold_days"   : days,
+                    "cmp"         : round(cmp, 2),
+                    "ema220"      : round(ema, 2),
+                    "pnl_pct"     : round(pct, 2),
+                    "pnl_usd"     : round((cmp - ep) * sh, 2),
+                    "change_pct"  : round(chg, 2),
+                    "trailing_sl" : round(sl, 2),
+                    "new_sl"      : nsl,
+                    "sl_updated"  : nsl > sl,
+                    "near_sl"     : cmp < sl * 1.05,
+                    "target_40"   : round(ep * 1.4, 2),
+                    "target_100"  : round(ep * 2.0, 2),
+                    "hit_40"      : pct >= 40,
+                    "hit_100"     : pct >= 100,
                 })
+        st.session_state["_nasdaq_live_cache"] = live
 
         if not live:
             st.error("Could not fetch prices for any position.")
         else:
+            # ── Alerts ──
             for p in live:
                 if p["near_sl"]:    st.error(f"⚠️ {p['symbol']} — ${p['cmp']:.2f} near SL ${p['trailing_sl']:.2f}")
-                if p["hit_40"]:     st.success(f"✅ {p['symbol']} — Up +{p['pnl_pct']:.1f}% · Consider booking 50%")
-                if p["hit_100"]:    st.success(f"✅ {p['symbol']} — Up +{p['pnl_pct']:.1f}% · Consider booking next 25%")
-                if p["sl_updated"]: st.info(f"↑ {p['symbol']} — Raise SL to ${p['new_sl']:.2f}")
+                if p["hit_40"]:     st.success(f"🎯 {p['symbol']} up +{p['pnl_pct']:.1f}% — consider booking 50%")
+                if p["sl_updated"]: st.info(f"🔺 {p['symbol']}: raise SL from ${p['trailing_sl']} → ${p['new_sl']}")
 
+            # ── Summary cards (no truncation) ──
             total_inv = sum(p["entry_price"] * p["shares"] for p in live)
             total_cur = sum(p["cmp"] * p["shares"] for p in live)
             total_pnl = total_cur - total_inv
             total_pct = total_pnl / total_inv * 100 if total_inv > 0 else 0
-
-            # FIX: Custom HTML summary cards — no truncation
+            day_pnl   = sum(p["change_pct"] / 100 * p["cmp"] * p["shares"] for p in live)
             best_p    = max(live, key=lambda x: x["pnl_pct"])
-            pnl_color = "#34d399" if total_pnl >= 0 else "#f87171"
             pct_color = "#34d399" if total_pct >= 0 else "#f87171"
+            day_color = "#34d399" if day_pnl   >= 0 else "#f87171"
 
             def _card(label, value, sub="", sub_color="#888"):
                 return (
@@ -675,76 +756,200 @@ elif page == "💼 My Positions":
 
             st.markdown(
                 '<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">'
-                + _card("Invested",       f"${total_inv:,.0f}")
-                + _card("Current Value",  f"${total_cur:,.0f}")
-                + _card("Total P&L",      f"${total_pnl:+,.0f}", f"{total_pct:+.2f}%", pct_color)
-                + _card("Open Positions", f"{len(live)} / 8")
-                + _card("Best Performer", best_p["symbol"], f"{best_p['pnl_pct']:+.2f}%", "#34d399")
+                + _card("Invested",      f"${total_inv:,.0f}")
+                + _card("Current Value", f"${total_cur:,.0f}")
+                + _card("Total P&L",     f"${total_pnl:+,.0f}", f"{total_pct:+.2f}%", pct_color)
+                + _card("Day P&L",       f"${day_pnl:+,.0f}", sub_color=day_color)
+                + _card("Positions",     f"{len(live)} / 8")
+                + _card("Best",          best_p["symbol"], f"{best_p['pnl_pct']:+.2f}%", "#34d399")
                 + '</div>',
                 unsafe_allow_html=True,
             )
 
+            # ── Holdings table ──
             st.markdown("---")
-            cols = st.columns(min(len(live), 3))
-            for i, p in enumerate(live):
-                with cols[i % 3]:
-                    bar = min(100, max(0, (p["cmp"] - p["trailing_sl"]) / p["trailing_sl"] * 500))
-                    bc  = "#f87171" if bar < 20 else "#fbbf24" if bar < 50 else "#34d399"
-                    cc  = "#f87171" if p["near_sl"] else "#34d399" if p["hit_40"] else "#1a3a2a"
-                    st.markdown(f"""
-                    <div style="background:#0f1a14;border:1px solid {cc};border-radius:10px;padding:14px;margin-bottom:10px">
-                      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-                        <div><div style="font-size:18px;font-weight:700">{p['symbol']}</div>
-                        <div style="font-size:11px;color:#888">{p['entry_date']} · {p['hold_days']} days</div></div>
-                        <div style="text-align:right">
-                          <div style="font-size:20px;font-weight:700;color:{'#34d399' if p['pnl_pct']>=0 else '#f87171'}">{p['pnl_pct']:+.2f}%</div>
-                          <div style="font-size:12px;color:{'#34d399' if p['pnl_usd']>=0 else '#f87171'}">${abs(p['pnl_usd']):,.0f}</div>
-                        </div>
-                      </div>
-                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
-                        <div><span style="color:#888;font-size:11px">CMP</span><br><b>${p['cmp']:,.2f}</b></div>
-                        <div><span style="color:#888;font-size:11px">Entry</span><br><b>${p['entry_price']:,.2f}</b></div>
-                        <div><span style="color:#888;font-size:11px">EMA 220</span><br><b>${p['ema220']:,.2f}</b></div>
-                        <div><span style="color:#888;font-size:11px">Shares</span><br><b>{p['shares']}</b></div>
-                        <div><span style="color:#888;font-size:11px">Trailing SL</span><br><b style="color:#f87171">${p['trailing_sl']:,.2f}</b></div>
-                        <div><span style="color:#888;font-size:11px">Updated SL</span><br><b style="color:{'#34d399' if p['sl_updated'] else '#e0e0f0'}">${p['new_sl']:,.2f} {'↑' if p['sl_updated'] else ''}</b></div>
-                        <div><span style="color:#888;font-size:11px">+40% Target</span><br><b style="color:{'#34d399' if p['hit_40'] else '#e0e0f0'}">${p['target_40']:,.2f} {'✓' if p['hit_40'] else ''}</b></div>
-                        <div><span style="color:#888;font-size:11px">+100% Target</span><br><b style="color:{'#34d399' if p['hit_100'] else '#e0e0f0'}">${p['target_100']:,.2f} {'✓' if p['hit_100'] else ''}</b></div>
-                      </div>
-                      <div style="background:#0a0f0d;border-radius:3px;height:4px;margin-top:10px;overflow:hidden">
-                        <div style="width:{bar}%;height:100%;background:{bc};border-radius:3px"></div>
-                      </div>
-                    </div>""", unsafe_allow_html=True)
-                    bc1, bc2 = st.columns(2)
-                    with bc1:
-                        if st.button("Update SL", key=f"nsl_{p['symbol']}"):
-                            for pos in st.session_state["nasdaq_positions"]:
-                                if pos["symbol"] == p["symbol"]:
-                                    pos["trailing_sl"] = p["new_sl"]
-                            st.success(f"SL updated to ${p['new_sl']:.2f}")
-                            st.rerun()
-                    with bc2:
-                        if st.button("Exit", key=f"nex_{p['symbol']}", type="secondary"):
-                            st.session_state["nasdaq_positions"] = [
-                                pos for pos in st.session_state["nasdaq_positions"]
-                                if pos["symbol"] != p["symbol"]]
-                            st.rerun()
+            st.markdown("#### Holdings Overview")
+            trows = []
+            for p in sorted(live, key=lambda x: x["pnl_pct"], reverse=True):
+                inv = p["entry_price"] * p["shares"]
+                trows.append({
+                    "Stock"    : p["symbol"],
+                    "Qty"      : p["shares"],
+                    "Buy $"    : f"${p['entry_price']:,.2f}",
+                    "CMP $"    : f"${p['cmp']:,.2f}",
+                    "Invested" : f"${inv:,.0f}",
+                    "Current"  : f"${p['cmp']*p['shares']:,.0f}",
+                    "Day %"    : f"{p['change_pct']:+.2f}%",
+                    "P&L $"    : f"${p['pnl_usd']:+,.0f}",
+                    "P&L %"    : f"{p['pnl_pct']:+.2f}%",
+                    "SL $"     : f"${p['trailing_sl']:,.2f}",
+                    "Days"     : p["hold_days"],
+                })
+            st.dataframe(trows, hide_index=True, width="stretch")
 
+            # ── Individual tabs ──
+            st.markdown("---")
+            st.markdown("#### Individual Holdings")
+            htabs = st.tabs([p["symbol"] for p in live])
+            for htab, p in zip(htabs, live):
+                with htab:
+                    inv      = p["entry_price"] * p["shares"]
+                    curr     = p["cmp"] * p["shares"]
+                    day_p    = p["change_pct"] / 100 * p["cmp"] * p["shares"]
+                    dist_pct = (p["cmp"] - p["trailing_sl"]) / p["cmp"] * 100
+
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("CMP",          f"${p['cmp']:,.2f}",      f"{p['change_pct']:+.2f}% today")
+                    m2.metric("Buying Price", f"${p['entry_price']:,.2f}")
+                    m3.metric("Total P&L",    f"${p['pnl_usd']:+,.0f}", f"{p['pnl_pct']:+.2f}%")
+                    m4.metric("Days Held",    str(p["hold_days"]))
+
+                    st.markdown("---")
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.markdown("**Position**")
+                        st.metric("Shares",        str(p["shares"]))
+                        st.metric("Invested",      f"${inv:,.0f}")
+                        st.metric("Current Value", f"${curr:,.0f}", f"${p['pnl_usd']:+,.0f}")
+                    with c2:
+                        st.markdown("**P&L**")
+                        st.metric("Today Change", f"{p['change_pct']:+.2f}%")
+                        st.metric("Today P&L",    f"${day_p:+,.0f}")
+                        st.metric("Total P&L",    f"${p['pnl_usd']:+,.0f}", f"{p['pnl_pct']:+.2f}%")
+                    with c3:
+                        st.markdown("**Stop Loss**")
+                        st.metric("Trailing SL", f"${p['trailing_sl']:,.2f}")
+                        st.metric("Updated SL",  f"${p['new_sl']:,.2f}", "raise it!" if p["sl_updated"] else "")
+                        st.metric("Distance",    f"{dist_pct:.1f}% above SL")
+
+                    st.markdown("---")
+                    t1, t2, t3 = st.columns(3)
+                    t1.metric("+40% target (sell 50%)",  f"${p['target_40']:,.2f}",
+                              "HIT!" if p["hit_40"] else f"${(p['target_40']-p['cmp'])*p['shares']:,.0f} away")
+                    t2.metric("+100% target (sell 25%)", f"${p['target_100']:,.2f}",
+                              "HIT!" if p["hit_100"] else f"${(p['target_100']-p['cmp'])*p['shares']:,.0f} away")
+                    t3.metric("EMA 220", f"${p['ema220']:,.2f}",
+                              f"{((p['cmp']/p['ema220'])-1)*100:+.1f}% from EMA")
+
+                    if p["sl_updated"]: st.info(f"Update SL to ${p['new_sl']} in Google Sheet")
+                    if p["near_sl"]:    st.error(f"Only {dist_pct:.1f}% above SL — monitor closely!")
+                    if p["hit_40"]:     st.success(f"+40% target hit! Consider selling {p['shares']//2} shares")
+
+            # ── Charts ──
+            st.markdown("---")
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                st.markdown("#### Allocation")
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=[p["symbol"] for p in live],
+                    values=[round(p["cmp"] * p["shares"], 0) for p in live],
+                    hole=0.5, textinfo="label+percent",
+                    marker=dict(colors=["#22d3ee","#34d399","#f87171","#fbbf24","#a89cff","#6ee7b7","#fca5a5","#7c6af7"]))])
+                fig_pie.update_layout(
+                    paper_bgcolor="#0a0f0d", plot_bgcolor="#0a0f0d",
+                    font=dict(color="#e0e0f0"), showlegend=False, height=280,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    annotations=[dict(text=f"${total_cur:,.0f}", x=0.5, y=0.5,
+                                      font_size=12, font_color="#fff", showarrow=False)])
+                st.plotly_chart(fig_pie, width="stretch")
+            with cc2:
+                st.markdown("#### P&L by Stock")
+                pnl_vals = [p["pnl_usd"] for p in live]
+                fig_bar  = go.Figure(data=[go.Bar(
+                    x=[p["symbol"] for p in live], y=pnl_vals,
+                    marker_color=["#34d399" if v >= 0 else "#f87171" for v in pnl_vals],
+                    text=[f"${v:+,.0f}" for v in pnl_vals], textposition="outside")])
+                fig_bar.update_layout(
+                    paper_bgcolor="#0a0f0d", plot_bgcolor="#0a0f0d",
+                    font=dict(color="#e0e0f0"), height=280, showlegend=False,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    xaxis=dict(gridcolor="#0f1a14"), yaxis=dict(gridcolor="#0f1a14"))
+                fig_bar.add_hline(y=0, line_color="#888", line_dash="dot")
+                st.plotly_chart(fig_bar, width="stretch")
+
+            # ── Chart for individual stock ──
             st.markdown("---")
             pick = st.selectbox("View chart", [p["symbol"] for p in live])
             if pick:
                 df_raw = fetch_data(pick, "2y")
                 if df_raw is not None and len(df_raw) >= 2:
-                    df  = add_indicators(df_raw)
-                    pos = next(p for p in live if p["symbol"] == pick)
-                    fig = build_chart(df, pick, 180)
-                    fig.add_hline(y=pos["entry_price"], line_dash="dash",
+                    df_c  = add_indicators(df_raw)
+                    pos_c = next(p for p in live if p["symbol"] == pick)
+                    fig   = build_chart(df_c, pick, 180)
+                    fig.add_hline(y=pos_c["entry_price"], line_dash="dash",
                                   line_color="#fbbf24", annotation_text="Entry",
                                   annotation_font_color="#fbbf24", row=1, col=1)
-                    fig.add_hline(y=pos["trailing_sl"], line_dash="dash",
+                    fig.add_hline(y=pos_c["trailing_sl"], line_dash="dash",
                                   line_color="#f87171", annotation_text="SL",
                                   annotation_font_color="#f87171", row=1, col=1)
                     st.plotly_chart(fig, width="stretch")
+
+            # ── Realised P&L ──
+            st.markdown("---")
+            st.markdown("### Realised P&L")
+            closed     = read_nasdaq_closed()
+            _live_data = st.session_state.get("_nasdaq_live_cache", [])
+
+            with st.expander("Log a Closed Trade"):
+                lc1, lc2, lc3, lc4, lc5, lc6 = st.columns(6)
+                with lc1: ct_sym  = st.text_input("Symbol",    key="nct_sym").upper().strip()
+                with lc2: ct_ep   = st.number_input("Entry $", min_value=0.0, step=0.1, key="nct_ep")
+                with lc3: ct_xp   = st.number_input("Exit $",  min_value=0.0, step=0.1, key="nct_xp")
+                with lc4: ct_sh   = st.number_input("Shares",  min_value=1, step=1,     key="nct_sh")
+                with lc5: ct_edt  = st.date_input("Entry Date", key="nct_edt")
+                with lc6: ct_xdt  = st.date_input("Exit Date",  key="nct_xdt")
+                ct_reason = st.selectbox("Reason",
+                    ["Trailing SL", "+40% Profit", "+100% Profit", "Manual Exit"], key="nct_reason")
+                if st.button("Log Trade", type="primary", key="nct_add"):
+                    if ct_sym and ct_ep > 0 and ct_xp > 0 and ct_sh > 0:
+                        pnl  = round((ct_xp - ct_ep) * ct_sh * 0.995, 2)
+                        pct2 = round((ct_xp - ct_ep) / ct_ep * 100, 2)
+                        st.success(f"{ct_sym} P&L: ${pnl:+,.0f} ({pct2:+.2f}%)")
+                        st.info(f"Add to Google Sheet Closed tab: {ct_sym} | {ct_ep} | {ct_xp} | {ct_sh} | {ct_edt} | {ct_xdt} | {ct_reason}")
+                    else:
+                        st.error("Fill all fields")
+
+            if closed:
+                total_realised = sum(t["pnl_usd"] for t in closed)
+                wins     = [t for t in closed if t["pnl_usd"] > 0]
+                losses   = [t for t in closed if t["pnl_usd"] <= 0]
+                wr       = len(wins) / len(closed) * 100 if closed else 0
+                loss_sum = sum(t["pnl_usd"] for t in losses)
+                pf       = sum(t["pnl_usd"] for t in wins) / abs(loss_sum) if loss_sum != 0 else 0
+
+                rc1, rc2, rc3, rc4, rc5 = st.columns(5)
+                rc1.metric("Realised P&L",  f"${total_realised:+,.0f}")
+                rc2.metric("Trades",        len(closed))
+                rc3.metric("Win Rate",      f"{wr:.0f}%")
+                rc4.metric("Avg Win",       f"{sum(t['pnl_pct'] for t in wins)/len(wins) if wins else 0:+.1f}%")
+                rc5.metric("Profit Factor", f"{pf:.2f}" if pf else "N/A")
+
+                total_unreal = sum(p["pnl_usd"] for p in _live_data) if _live_data else 0
+                uc1, uc2, uc3 = st.columns(3)
+                uc1.metric("Unrealised", f"${total_unreal:+,.0f}")
+                uc2.metric("Realised",   f"${total_realised:+,.0f}")
+                uc3.metric("Combined",   f"${total_unreal + total_realised:+,.0f}")
+
+                ctrows = [{
+                    "Symbol"   : t["symbol"],
+                    "Entry Date": t["entry_date"], "Exit Date": t["exit_date"],
+                    "Entry $"  : t["entry_price"], "Exit $": t["exit_price"],
+                    "Shares"   : t["shares"],
+                    "P&L $"    : f"${t['pnl_usd']:+,.0f}",
+                    "P&L %"    : f"{t['pnl_pct']:+.2f}%",
+                    "Days"     : t["hold_days"],
+                    "Reason"   : t["reason"],
+                } for t in reversed(closed)]
+                st.dataframe(ctrows, hide_index=True, width="stretch")
+            else:
+                st.info("No closed trades yet.")
+
+            with st.expander("How to Add Positions"):
+                st.markdown(
+                    f"All position management in [Google Sheet]({NASDAQ_SHEET_LINK}). "
+                    "Add rows to the **Positions** tab. When exiting, move the row to the **Closed** tab "
+                    "and fill in exit_price, exit_date, and reason."
+                )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
